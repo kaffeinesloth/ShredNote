@@ -1,0 +1,292 @@
+# ShredNote Project Update Log
+
+Last updated: 2026-08-26
+Workspace: /Volumes/Storage_01/ShredNote
+
+## Purpose of This File
+
+This file is a handoff summary for another AI assistant, developer, or future
+session. It describes the current state of the ShredNote codebase, what is
+implemented, what has been verified, and what likely remains next.
+
+## Project Overview
+
+ShredNote is currently a Flutter application in an early prototype stage. The
+implemented UI is a desktop-style workspace with a dark left sidebar and a blank
+main workspace area. The active feature is a stacked paper-preview sidebar where
+new "paper" items can be created and selected.
+
+The project still uses mostly default Flutter project metadata and platform
+scaffolding. Product behavior is concentrated in the Dart files under `lib/`.
+
+## Current Repository State
+
+- Git branch: `main`
+- Remote tracking: `origin/main`
+- Local branch status at time of log creation: ahead of `origin/main` by 2 commits
+- Working tree at time of log creation: clean before creating this `UpdateLog`
+- Recent commits:
+  - `45b13b4 fixing preview not staying on top`
+  - `f8230e1 implement paper preview scrolling`
+  - `2af0b70 Add paper previews to sidebar`
+  - `9ee57b2 add the first 2 columns`
+  - `b387af8 Create Flutter project structure`
+  - `0573416 Add ShredNote development structure guide`
+  - `76c5e34 Initial ShredNote project`
+
+## Technology Stack
+
+- Framework: Flutter
+- Language: Dart
+- Dart SDK constraint: `^3.11.5`
+- Material version: Material 3 enabled
+- Main runtime dependencies:
+  - `flutter`
+  - `cupertino_icons: ^1.0.8`
+- Dev/test dependencies:
+  - `flutter_test`
+  - `flutter_lints: ^6.0.0`
+
+No app-specific storage, database, backend, routing, state management library,
+or asset pipeline is currently configured.
+
+## Important Files
+
+- `lib/main.dart`
+  - Entry point.
+  - Runs `ShredNoteApp`.
+
+- `lib/app.dart`
+  - Defines `ShredNoteApp`.
+  - Creates the `MaterialApp`.
+  - Sets app title to `ShredNote`.
+  - Disables the debug banner.
+  - Configures a light Material 3 theme with brown seed color `0xFF7A5C3E`.
+  - Uses scaffold background `0xFFF4F0E8`.
+  - Loads `WorkspaceScreen` as the home screen.
+
+- `lib/screens/workspace_screen.dart`
+  - Contains nearly all current custom app logic.
+  - Implements the workspace shell.
+  - Implements keyboard shortcut handling.
+  - Implements the paper list model and paper stack preview UI.
+
+- `test/widget_test.dart`
+  - Contains two widget tests:
+    - Verifies the app shell renders.
+    - Verifies Command+N creates an `Untitled Paper`.
+
+- `analysis_options.yaml`
+  - Uses `package:flutter_lints/flutter.yaml`.
+  - No custom lint rules are currently enabled.
+
+- `Docs/ShredNote_UI_UX_Concept_Document.docx`
+  - Existing product/design document.
+  - Binary `.docx`; not directly represented in app code.
+
+- `Docs/ShredNote_Development_Structure_Guide.docx`
+  - Existing development structure guide.
+  - Binary `.docx`; not directly represented in app code.
+
+## Implemented App Behavior
+
+### App Shell
+
+The screen is split into two columns:
+
+- Left sidebar:
+  - Fixed width: `260`
+  - Dark background: `0xFF20272A`
+  - Contains the paper stack.
+
+- Main workspace:
+  - Expanded to fill remaining horizontal space.
+  - Blank light background: `0xFFF1E9DD`
+  - No editor, toolbar, document canvas, or content interaction yet.
+
+### Keyboard Shortcut
+
+`WorkspaceScreen` registers a Flutter `Shortcuts` and `Actions` pair:
+
+- Shortcut: `Meta/Cmd + N`
+- Intent: `AddPaperIntent`
+- Action: creates a new paper item.
+
+The screen owns a `FocusNode` named `WorkspaceShortcuts`. It requests focus
+after the first frame and again when the screen is tapped, so the keyboard
+shortcut can remain active.
+
+### Paper Creation
+
+New papers are stored in an in-memory list:
+
+```dart
+final List<PaperStackItem> _papers = [];
+```
+
+When a paper is created:
+
+- Existing papers are marked unselected.
+- A new `PaperStackItem` is appended.
+- The new paper gets a generated title:
+  - First paper: `Untitled Paper`
+  - Later papers: `Untitled Paper 2`, `Untitled Paper 3`, etc.
+- The new paper receives `DateTime.now()` as `createdAt`.
+- The new paper is marked selected.
+- The list is sorted by `createdAt` ascending.
+
+Current limitation: papers are not persisted. Restarting the app loses them.
+
+### Paper Selection
+
+Clicking/tapping a paper preview calls `_selectPaper`, which:
+
+- Iterates through `_papers`.
+- Marks only the tapped paper as selected.
+- Uses `createdAt` equality as the identifier.
+
+Current limitation: there is no stable explicit paper ID. `createdAt` is acting
+as the identity for now.
+
+### Paper Stack UI
+
+`PaperStack` is a stateful widget exposed with `@visibleForTesting`.
+
+Important constants:
+
+- Paper height: `128`
+- Vertical stride between papers: `92`
+
+Behavior:
+
+- If there are no papers, it renders an empty expanded box.
+- Uses `LayoutBuilder` to calculate vertical positioning.
+- Centers a single paper vertically when possible.
+- Wraps the stack in a `SingleChildScrollView`.
+- Uses `AnimatedBuilder` tied to the scroll controller to recalculate visual
+  emphasis while scrolling.
+- Computes each paper's distance from the viewport center.
+- Sorts layout entries by distance so the more centered/focused paper is painted
+  above less focused previews. This appears to be the fix from the latest commit.
+
+### Paper Preview Visuals
+
+`PaperPreview` is a stateless widget exposed with `@visibleForTesting`.
+
+It displays:
+
+- Paper title.
+- Short localized creation date.
+
+Visual treatment:
+
+- Paper color: `0xFFFFF7E8`
+- Border radius: `7`
+- Title color: `0xFF28241F`
+- Date color: `0xFF756D63`
+- Shadow blur and opacity vary based on center focus.
+- Selected papers get stronger shadow emphasis.
+- Width and scale are interpolated by scroll focus:
+  - Scale from `0.9` to `1.0`
+  - Width factor from `0.74` to `0.96`
+  - Shadow blur from `5` to `18`
+  - Shadow opacity from `0.12` to `0.28`
+
+## Current Code Size
+
+Approximate line counts at time of this log:
+
+- `lib/main.dart`: 7 lines
+- `lib/app.dart`: 24 lines
+- `lib/screens/workspace_screen.dart`: 438 lines
+- `test/widget_test.dart`: 27 lines
+- `pubspec.yaml`: 89 lines
+- `analysis_options.yaml`: 28 lines
+
+The project is still compact. Most of the app-specific code is in one screen
+file.
+
+## Verification Status
+
+Commands run successfully on 2026-08-26:
+
+```sh
+flutter analyze
+```
+
+Result:
+
+```text
+No issues found!
+```
+
+```sh
+flutter test
+```
+
+Result:
+
+```text
+All tests passed!
+```
+
+The current tests only cover basic rendering and the Command+N paper creation
+shortcut. They do not yet cover scrolling, visual layering, selection behavior,
+or persistence.
+
+## Known Gaps and Limitations
+
+- README is still the default Flutter README and does not describe ShredNote.
+- No persistent storage for papers.
+- No real note editor or document canvas in the main workspace.
+- No note content model beyond title, creation date, and selected state.
+- No stable ID field for paper identity.
+- No rename/edit/delete/reorder behavior for papers.
+- No sidebar controls or visible "new paper" button.
+- No routing or multi-screen navigation.
+- No app settings.
+- No custom assets, icons, typography, or branding assets are configured.
+- No platform-specific app naming/icons beyond Flutter defaults have been
+  reviewed in this log.
+- Product/design `.docx` files exist under `Docs/`, but the running code does
+  not currently appear to consume them.
+
+## Suggested Next Work
+
+The most logical next steps are:
+
+1. Update `README.md` so it reflects the actual ShredNote project.
+2. Add a visible new-paper control in the sidebar, alongside the existing
+   Command+N shortcut.
+3. Introduce a stable paper ID instead of using `createdAt` as identity.
+4. Add a paper content model with title/body fields.
+5. Build the main workspace editor for the selected paper.
+6. Add persistence, likely local-first storage.
+7. Add tests for:
+   - Multiple paper creation and titles.
+   - Selection behavior.
+   - Paper stack ordering/layering behavior.
+   - Empty state behavior.
+8. Consider splitting `workspace_screen.dart` into smaller files once editor,
+   persistence, and sidebar controls are added.
+
+## Quick Start for Another AI
+
+Start by reading these files in order:
+
+1. `UpdateLog`
+2. `lib/screens/workspace_screen.dart`
+3. `lib/app.dart`
+4. `test/widget_test.dart`
+5. `pubspec.yaml`
+
+Then run:
+
+```sh
+flutter analyze
+flutter test
+```
+
+Assume the app is an early-stage Flutter prototype. The current working feature
+is the animated/scrolling paper-preview stack in the left sidebar. The next major
+missing product surface is the actual note/document editor in the main panel.
