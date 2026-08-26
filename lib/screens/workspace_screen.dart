@@ -162,8 +162,8 @@ class PaperStack extends StatefulWidget {
 }
 
 class _PaperStackState extends State<PaperStack> {
-  static const double _paperHeight = 132;
-  static const double _paperStride = 72;
+  static const double _paperHeight = 128;
+  static const double _paperStride = 92;
 
   late final ScrollController _scrollController;
 
@@ -208,24 +208,40 @@ class _PaperStackState extends State<PaperStack> {
                   final scrollOffset = _scrollController.hasClients
                       ? _scrollController.offset
                       : 0.0;
+                  final paperLayouts =
+                      [
+                        for (
+                          var index = 0;
+                          index < widget.papers.length;
+                          index += 1
+                        )
+                          _PaperStackLayout(
+                            paper: widget.papers[index],
+                            top: verticalInset + index * _paperStride,
+                            distanceFromCenter: _distanceFromCenter(
+                              top: verticalInset + index * _paperStride,
+                              scrollOffset: scrollOffset,
+                              viewportCenter: constraints.maxHeight / 2,
+                            ),
+                          ),
+                      ]..sort(
+                        (first, second) => second.distanceFromCenter.compareTo(
+                          first.distanceFromCenter,
+                        ),
+                      );
 
                   return Stack(
                     clipBehavior: Clip.none,
                     children: [
-                      for (
-                        var index = 0;
-                        index < widget.papers.length;
-                        index += 1
-                      )
+                      for (final layout in paperLayouts)
                         _PositionedPaperPreview(
-                          paper: widget.papers[index],
-                          top: verticalInset + index * _paperStride,
+                          paper: layout.paper,
+                          top: layout.top,
                           scrollOffset: scrollOffset,
                           viewportCenter: constraints.maxHeight / 2,
                           paperHeight: _paperHeight,
-                          onTap: () => widget.onPaperSelected?.call(
-                            widget.papers[index],
-                          ),
+                          onTap: () =>
+                              widget.onPaperSelected?.call(layout.paper),
                         ),
                     ],
                   );
@@ -237,6 +253,31 @@ class _PaperStackState extends State<PaperStack> {
       },
     );
   }
+
+  double _distanceFromCenter({
+    required double top,
+    required double scrollOffset,
+    required double viewportCenter,
+  }) {
+    final paperCenter = top - scrollOffset + _paperHeight / 2;
+
+    return ((paperCenter - viewportCenter).abs() / viewportCenter).clamp(
+      0.0,
+      1.0,
+    );
+  }
+}
+
+class _PaperStackLayout {
+  const _PaperStackLayout({
+    required this.paper,
+    required this.top,
+    required this.distanceFromCenter,
+  });
+
+  final PaperStackItem paper;
+  final double top;
+  final double distanceFromCenter;
 }
 
 class _PositionedPaperPreview extends StatelessWidget {
@@ -262,7 +303,7 @@ class _PositionedPaperPreview extends StatelessWidget {
     final distance = ((paperCenter - viewportCenter).abs() / viewportCenter)
         .clamp(0.0, 1.0);
     final focus = 1 - distance;
-    final scale = lerpDouble(0.88, 1, focus)!;
+    final scale = lerpDouble(0.9, 1, focus)!;
     final widthFactor = lerpDouble(0.74, 0.96, focus)!;
     final shadowBlur = lerpDouble(5, 18, focus)!;
     final shadowOpacity = lerpDouble(0.12, 0.28, focus)!;
@@ -348,7 +389,7 @@ class PaperPreview extends StatelessWidget {
           onTap: onTap,
           borderRadius: const BorderRadius.all(Radius.circular(7)),
           child: Ink(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+            padding: const EdgeInsets.fromLTRB(16, 40, 16, 14),
             decoration: BoxDecoration(
               color: const Color(0xFFFFF7E8),
               borderRadius: const BorderRadius.all(Radius.circular(7)),
