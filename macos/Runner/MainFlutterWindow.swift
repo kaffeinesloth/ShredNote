@@ -15,13 +15,13 @@ class MainFlutterWindow: NSWindow {
       switch call.method {
       case "paperScroll":
         NSHapticFeedbackManager.defaultPerformer.perform(
-          .generic,
+          .levelChange,
           performanceTime: .now)
-        result(nil)
-      case "paperSnap":
-        NSHapticFeedbackManager.defaultPerformer.perform(
-          .generic,
-          performanceTime: .now)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.035) {
+          NSHapticFeedbackManager.defaultPerformer.perform(
+            .generic,
+            performanceTime: .now)
+        }
         result(nil)
       default:
         result(FlutterMethodNotImplemented)

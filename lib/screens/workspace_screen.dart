@@ -313,13 +313,13 @@ class _PaperStackState extends State<PaperStack> {
   static const Duration _snapDebounceDuration = Duration(milliseconds: 140);
   static const Duration _snapAnimationDuration = Duration(milliseconds: 420);
   static const Duration _scrollHapticMinimumInterval = Duration(
-    milliseconds: 32,
+    milliseconds: 90,
   );
 
   late final ScrollController _scrollController;
   Timer? _snapDebounceTimer;
   DateTime? _lastScrollHapticAt;
-  double? _lastScrollHapticOffset;
+  int? _lastMainAreaIndex;
   bool _isSnapping = false;
   bool _shouldAlignSelectedPaper = true;
 
@@ -398,8 +398,8 @@ class _PaperStackState extends State<PaperStack> {
               }
 
               if (notification is ScrollStartNotification) {
-                _lastScrollHapticOffset = _scrollController.hasClients
-                    ? _scrollController.offset
+                _lastMainAreaIndex = _scrollController.hasClients
+                    ? _mainPaperAreaIndex(paperStride)
                     : null;
               }
 
@@ -568,7 +568,6 @@ class _PaperStackState extends State<PaperStack> {
     if ((_scrollController.offset - targetOffset).abs() < 0.5) {
       if (selectPaper && selectAfterSnap) {
         widget.onPaperSelected?.call(widget.papers[index]);
-        _playPaperSnapHaptic();
       }
       return;
     }
@@ -583,22 +582,11 @@ class _PaperStackState extends State<PaperStack> {
 
       if (mounted && selectPaper && selectAfterSnap) {
         widget.onPaperSelected?.call(widget.papers[index]);
-        _playPaperSnapHaptic();
       }
     } finally {
       if (mounted) {
         _isSnapping = false;
       }
-    }
-  }
-
-  Future<void> _playPaperSnapHaptic() async {
-    try {
-      await _hapticsChannel.invokeMethod<void>('paperSnap');
-    } on MissingPluginException {
-      // Haptics are only wired on platforms that provide a native channel.
-    } on PlatformException {
-      // Haptics are optional; scrolling should never fail because of them.
     }
   }
 
@@ -608,22 +596,28 @@ class _PaperStackState extends State<PaperStack> {
     }
 
     final now = DateTime.now();
-    final currentOffset = _scrollController.offset;
-    final previousOffset = _lastScrollHapticOffset ?? currentOffset;
-    final minimumDistance = max(12.0, paperStride * 0.08);
-    final hasMovedEnough =
-        (currentOffset - previousOffset).abs() >= minimumDistance;
+    final currentMainAreaIndex = _mainPaperAreaIndex(paperStride);
+    final previousMainAreaIndex = _lastMainAreaIndex ?? currentMainAreaIndex;
+    final hasCrossedMainAreaThreshold =
+        currentMainAreaIndex != previousMainAreaIndex;
     final hasWaitedEnough =
         _lastScrollHapticAt == null ||
         now.difference(_lastScrollHapticAt!) >= _scrollHapticMinimumInterval;
 
-    if (!hasMovedEnough || !hasWaitedEnough) {
+    if (!hasCrossedMainAreaThreshold || !hasWaitedEnough) {
       return;
     }
 
-    _lastScrollHapticOffset = currentOffset;
+    _lastMainAreaIndex = currentMainAreaIndex;
     _lastScrollHapticAt = now;
     _playPaperScrollHaptic();
+  }
+
+  int _mainPaperAreaIndex(double paperStride) {
+    return (_scrollController.offset / paperStride)
+        .round()
+        .clamp(0, widget.papers.length - 1)
+        .toInt();
   }
 
   Future<void> _playPaperScrollHaptic() async {

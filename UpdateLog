@@ -25,17 +25,29 @@ scaffolding. Product behavior is concentrated in the Dart files under `lib/`.
 - Git branch: `main`
 - Remote tracking: `origin/main`
 - Local branch status at time of this log update: synced with `origin/main`
-- Working tree at time of this log update: modified by the in-memory document
-  editor work and this `UpdateLog` update
+- Working tree at time of this log update: modified by the haptics refinement
+  work and this `UpdateLog` update
 - Recent commits:
+  - `64f157d add haptis feedback`
+  - `0cf5c59 fix scrolling range viewing and smoothing fixing`
+  - `51b30fd implement the scrolling behaviour + auto snapping + fix smoothing`
+  - `410d21a fix scrolling, auto snapping`
+  - `cfc3153 update the UpdateLog`
   - `1fc4397 update the left column UI mechanics`
   - `a00c284 add UpdateLog for future use`
   - `45b13b4 fixing preview not staying on top`
-  - `f8230e1 implement paper preview scrolling`
-  - `2af0b70 Add paper previews to sidebar`
-  - `9ee57b2 add the first 2 columns`
-  - `b387af8 Create Flutter project structure`
-  - `0573416 Add ShredNote development structure guide`
+
+## Current Progress Stage
+
+The current program progress stage is refinement of the paper carousel
+interaction feel on macOS. The latest working-tree changes remove the separate
+snap haptic path and make scroll haptics fire only when movement crosses a
+paper's main-area threshold. The native macOS handler now responds only to
+`paperScroll`, using a two-part `levelChange` then `generic` feedback sequence
+to make threshold changes more noticeable.
+
+No persistence, sidebar controls, deletion/reordering, or rich editor behavior
+has been added in this stage.
 
 ## Technology Stack
 
@@ -74,15 +86,16 @@ or asset pipeline is currently configured.
   - Implements keyboard shortcut handling.
   - Implements the in-memory paper list model.
   - Implements the scrollable paper carousel and paper preview UI.
-  - Triggers optional scroll and snap haptics through the `shred_note/haptics`
-    method channel.
+  - Triggers optional scroll haptics through the `shred_note/haptics` method
+    channel.
   - Implements selected-paper title renaming and body editing in the main
     workspace.
 
 - `macos/Runner/MainFlutterWindow.swift`
   - Registers the `shred_note/haptics` method channel.
-  - Handles `paperScroll` with a stronger generic haptic.
-  - Handles `paperSnap` with a deeper generic haptic.
+  - Handles `paperScroll` with a stronger two-part haptic:
+    - `levelChange`
+    - followed shortly by `generic`
 
 - `test/widget_test.dart`
   - Contains widget tests for:
@@ -247,11 +260,12 @@ Behavior:
   selecting the next paper.
 - Snaps with a `420ms` ease-out animation.
 - Clicking a neighbouring paper selects it and animates it toward focus.
-- On macOS, scroll movement triggers frequent generic trackpad haptics after
-  roughly `32ms` and about `8%` of a paper stride, with a `12px` minimum
-  movement floor.
-- On macOS, completed scroll/tap snaps trigger a deeper trackpad haptic through
-  the same native method channel.
+- On macOS, scroll movement triggers strong trackpad haptics only when the
+  scroll crosses into another paper's main-area threshold. This is based on the
+  rounded paper index from `offset / paperStride`, not continuous movement.
+- Scroll haptics use a `90ms` minimum interval to avoid duplicate threshold
+  ticks during fast momentum.
+- Completed scroll/tap snaps do not trigger haptics.
 - Unsupported platforms ignore haptic calls.
 
 There is currently no drag-and-drop behavior in the paper preview code.
@@ -284,7 +298,7 @@ Approximate line counts at time of this log:
 
 - `lib/main.dart`: 7 lines
 - `lib/app.dart`: 24 lines
-- `lib/screens/workspace_screen.dart`: 822 lines
+- `lib/screens/workspace_screen.dart`: 816 lines
 - `macos/Runner/MainFlutterWindow.swift`: 35 lines
 - `test/widget_test.dart`: 325 lines
 - `pubspec.yaml`: 89 lines
