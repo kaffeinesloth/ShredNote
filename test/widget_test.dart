@@ -303,6 +303,96 @@ void main() {
     expect(span.toPlainText(), '_Fast_ <u>Held</u>');
   });
 
+  testWidgets('inline styles on selected list blocks preserve list markers', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final editorFinder = find.byKey(const ValueKey('editor-paper-1'));
+    await tester.tap(editorFinder);
+    await tester.pump();
+
+    final cases = [
+      (
+        key: LogicalKeyboardKey.keyB,
+        expectedText: '- **first**\n  + **nested**\n- **second**',
+      ),
+      (
+        key: LogicalKeyboardKey.keyI,
+        expectedText: '- _first_\n  + _nested_\n- _second_',
+      ),
+      (
+        key: LogicalKeyboardKey.keyU,
+        expectedText: '- <u>first</u>\n  + <u>nested</u>\n- <u>second</u>',
+      ),
+    ];
+
+    for (final testCase in cases) {
+      const originalText = '- first\n  + nested\n- second';
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: originalText,
+          selection: TextSelection(
+            baseOffset: 0,
+            extentOffset: originalText.length,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(testCase.key);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pump();
+
+      final editor = tester.widget<TextField>(editorFinder);
+      expect(editor.controller!.text, testCase.expectedText);
+    }
+  });
+
+  testWidgets('selected list block inline markers are hidden in editor text', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    final context = tester.element(find.byType(ShredNoteApp));
+    final controller = PaperEditingController(
+      text: '- **first**\n  + _nested_\n- <u>second</u>',
+    );
+    addTearDown(controller.dispose);
+
+    final span = controller.buildTextSpan(
+      context: context,
+      style: const TextStyle(fontSize: 18),
+      withComposing: false,
+    );
+
+    expect(span.toPlainText(), '- **first**\n  + _nested_\n- <u>second</u>');
+    expect(
+      span.children!.where((child) => child is TextSpan && child.text == '- '),
+      isNotEmpty,
+    );
+    expect(
+      span.children!.where(
+        (child) =>
+            child is TextSpan &&
+            (child.text == '**' ||
+                child.text == '_' ||
+                child.text == '<u>' ||
+                child.text == '</u>') &&
+            child.style?.color == Colors.transparent,
+      ),
+      isNotEmpty,
+    );
+  });
+
   testWidgets('enter keeps active inline styles on the next line', (
     WidgetTester tester,
   ) async {

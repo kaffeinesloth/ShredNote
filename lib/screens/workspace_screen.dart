@@ -524,29 +524,49 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         );
       }
     } else {
-      final hasStyleMarkers =
-          start >= openingMarker.length &&
-          end + closingMarker.length <= text.length &&
-          text.substring(start - openingMarker.length, start) ==
-              openingMarker &&
-          text.substring(end, end + closingMarker.length) == closingMarker;
+      final selectedText = text.substring(start, end);
+      final shouldStyleByLine =
+          selectedText.contains('\n') ||
+          _lineSyntaxPrefixLength(text, start) > 0;
 
-      if (hasStyleMarkers) {
-        updatedText = text
-            .replaceRange(end, end + closingMarker.length, '')
-            .replaceRange(start - openingMarker.length, start, '');
+      if (shouldStyleByLine) {
+        final result = _toggleInlineStyleBySelectedLines(
+          text,
+          start: start,
+          end: end,
+          openingMarker: openingMarker,
+          closingMarker: closingMarker,
+        );
+        updatedText = result.text;
         updatedSelection = TextSelection(
-          baseOffset: start - openingMarker.length,
-          extentOffset: end - openingMarker.length,
+          baseOffset: result.selectionStart,
+          extentOffset: result.selectionEnd,
         );
       } else {
-        updatedText = text
-            .replaceRange(end, end, closingMarker)
-            .replaceRange(start, start, openingMarker);
-        updatedSelection = TextSelection(
-          baseOffset: start + openingMarker.length,
-          extentOffset: end + openingMarker.length,
-        );
+        final hasStyleMarkers =
+            start >= openingMarker.length &&
+            end + closingMarker.length <= text.length &&
+            text.substring(start - openingMarker.length, start) ==
+                openingMarker &&
+            text.substring(end, end + closingMarker.length) == closingMarker;
+
+        if (hasStyleMarkers) {
+          updatedText = text
+              .replaceRange(end, end + closingMarker.length, '')
+              .replaceRange(start - openingMarker.length, start, '');
+          updatedSelection = TextSelection(
+            baseOffset: start - openingMarker.length,
+            extentOffset: end - openingMarker.length,
+          );
+        } else {
+          updatedText = text
+              .replaceRange(end, end, closingMarker)
+              .replaceRange(start, start, openingMarker);
+          updatedSelection = TextSelection(
+            baseOffset: start + openingMarker.length,
+            extentOffset: end + openingMarker.length,
+          );
+        }
       }
     }
 
@@ -556,6 +576,87 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
     _updateSelectedPaperContent(updatedText);
     _lastEditorText = updatedText;
+  }
+
+  _InlineStyleSelectionResult _toggleInlineStyleBySelectedLines(
+    String text, {
+    required int start,
+    required int end,
+    required String openingMarker,
+    required String closingMarker,
+  }) {
+    final firstLineStart = text.lastIndexOf('\n', max(0, start - 1)) + 1;
+    final selectedLineEnd = text.indexOf('\n', max(start, end - 1));
+    final lastLineEnd = selectedLineEnd == -1 ? text.length : selectedLineEnd;
+    final block = text.substring(firstLineStart, lastLineEnd);
+    final lines = block.split('\n');
+    final updatedLines = <String>[];
+    var delta = 0;
+
+    for (final line in lines) {
+      final prefixLength = _lineSyntaxPrefixLength(line, 0);
+      final content = line.substring(prefixLength);
+
+      if (content.isEmpty) {
+        updatedLines.add(line);
+        continue;
+      }
+
+      final hasStyleMarkers =
+          content.startsWith(openingMarker) && content.endsWith(closingMarker);
+      final updatedLine = hasStyleMarkers
+          ? '${line.substring(0, prefixLength)}${content.substring(openingMarker.length, content.length - closingMarker.length)}'
+          : '${line.substring(0, prefixLength)}$openingMarker$content$closingMarker';
+
+      delta += updatedLine.length - line.length;
+      updatedLines.add(updatedLine);
+    }
+
+    final updatedBlock = updatedLines.join('\n');
+    final updatedText = text.replaceRange(
+      firstLineStart,
+      lastLineEnd,
+      updatedBlock,
+    );
+
+    return _InlineStyleSelectionResult(
+      text: updatedText,
+      selectionStart: firstLineStart,
+      selectionEnd: lastLineEnd + delta,
+    );
+  }
+
+  int _lineSyntaxPrefixLength(String text, int offset) {
+    final lineStart = text.lastIndexOf('\n', max(0, offset - 1)) + 1;
+    final lineEnd = text.indexOf('\n', lineStart);
+    final line = text.substring(
+      lineStart,
+      lineEnd == -1 ? text.length : lineEnd,
+    );
+    final markerStart = line.indexOf(RegExp(r'[^ ]'));
+
+    if (markerStart == -1) {
+      return 0;
+    }
+
+    final marker = line.substring(markerStart);
+    if (marker.startsWith('- ') || marker.startsWith('+ ')) {
+      return markerStart + 2;
+    }
+
+    if (marker.startsWith('### ')) {
+      return markerStart + 4;
+    }
+
+    if (marker.startsWith('## ')) {
+      return markerStart + 3;
+    }
+
+    if (marker.startsWith('# ')) {
+      return markerStart + 2;
+    }
+
+    return 0;
   }
 
   @override
@@ -896,6 +997,18 @@ class _InlineMarkerMatch {
   final TextStyle Function(TextStyle style) styleBuilder;
 
   TextStyle applyTo(TextStyle style) => styleBuilder(style);
+}
+
+class _InlineStyleSelectionResult {
+  const _InlineStyleSelectionResult({
+    required this.text,
+    required this.selectionStart,
+    required this.selectionEnd,
+  });
+
+  final String text;
+  final int selectionStart;
+  final int selectionEnd;
 }
 
 class _NotesSidebar extends StatelessWidget {

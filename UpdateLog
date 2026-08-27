@@ -59,6 +59,9 @@ also keeps the current list marker and indentation.
 Pressing the active inline shortcut again while the cursor is before its hidden
 closing marker now moves the cursor after that marker, allowing normal typing to
 continue on the same line without corrupting the stored markdown syntax.
+Applying bold, italic, or underline to a selected block of list lines now wraps
+each item's text after its list marker instead of wrapping the whole selected
+block, so `- ` and `  + ` markers remain valid list syntax.
 
 The working tree also contains the previous macOS haptics refinement: the
 separate snap haptic path was removed, scroll haptics now fire only when
@@ -133,6 +136,8 @@ or asset pipeline is currently configured.
     - Enter normalization that continues bold, italic, and underline modes on
       the next line.
     - Combined list and inline-format Enter continuation.
+    - Selected list-block formatting that preserves list markers and hides
+      inline syntax per item.
     - Collapsed cursor shortcut exit behavior for returning to normal typing
       after bold, italic, or underline insertion.
     - `/h`, `/hh`, and `/hhh` + Enter heading command transformations.
@@ -298,6 +303,9 @@ Behavior:
 - Pressing the same inline shortcut again while the cursor is before a hidden
   closing marker moves the cursor after that marker. This lets users type bold,
   italic, or underlined text and then continue normal text on the same line.
+- Applying bold, italic, or underline to a selection that spans list lines wraps
+  only each line's content after the heading/list prefix. This prevents broken
+  forms like `**- item` and keeps list markers outside hidden formatting syntax.
 - Switching to another paper syncs the editor to that paper's saved in-memory
   title and content.
 - Switching back to a previous paper restores that paper's own content.
@@ -390,9 +398,9 @@ Approximate line counts at time of this log:
 
 - `lib/main.dart`: 7 lines
 - `lib/app.dart`: 24 lines
-- `lib/screens/workspace_screen.dart`: 1517 lines
+- `lib/screens/workspace_screen.dart`: 1630 lines
 - `macos/Runner/MainFlutterWindow.swift`: 35 lines
-- `test/widget_test.dart`: 972 lines
+- `test/widget_test.dart`: 1062 lines
 - `pubspec.yaml`: 89 lines
 - `analysis_options.yaml`: 28 lines
 
@@ -438,13 +446,14 @@ paper renaming, independent editor content per paper, Command+B bold markers,
 hidden bold-marker rendering, Command+I italic markers, Command+U underline
 tags, hidden italic/underline marker rendering, Enter normalization for inline
 formatting continuation, combined list and inline-format continuation,
-collapsed inline shortcut exit behavior, slash-command heading and bullet
-transformations, list continuation, Tab list-marker indentation, nested-list
-Enter dedent, list continuation ending after empty marker deletion, hidden
-heading-marker rendering, carousel proportions, visible-window rendering,
-smaller paper visibility, five-preview visibility, small focused-paper gap,
-balanced focused-paper adjacent spacing, selected-paper scale emphasis,
-small-scroll snap resistance, and click-to-focus selection.
+selected list-block inline formatting, collapsed inline shortcut exit behavior,
+slash-command heading and bullet transformations, list continuation, Tab
+list-marker indentation, nested-list Enter dedent, list continuation ending
+after empty marker deletion, hidden heading-marker rendering, carousel
+proportions, visible-window rendering, smaller paper visibility, five-preview
+visibility, small focused-paper gap, balanced focused-paper adjacent spacing,
+selected-paper scale emphasis, small-scroll snap resistance, and click-to-focus
+selection.
 
 ## Known Gaps and Limitations
 
