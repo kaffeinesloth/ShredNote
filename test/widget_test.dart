@@ -138,6 +138,41 @@ void main() {
     expect(find.text('Paper 30'), findsNothing);
   });
 
+  testWidgets('smaller papers expose more nearby previews', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      paperStackFixture(papers: papers(30, selectedIndex: 8)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byType(PaperPreview).evaluate().length,
+      greaterThanOrEqualTo(6),
+    );
+  });
+
+  testWidgets('paper stack can show at least five previews in view', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      paperStackFixture(papers: papers(30, selectedIndex: 8)),
+    );
+    await tester.pumpAndSettle();
+
+    final visiblePreviewCount = find.byType(PaperPreview).evaluate().where((
+      element,
+    ) {
+      final renderBox = element.renderObject! as RenderBox;
+      final topLeft = renderBox.localToGlobal(Offset.zero);
+      final rect = topLeft & renderBox.size;
+
+      return rect.bottom > 0 && rect.top < 600;
+    }).length;
+
+    expect(visiblePreviewCount, greaterThanOrEqualTo(5));
+  });
+
   testWidgets('paper stack keeps a small gap around the focused sheet', (
     WidgetTester tester,
   ) async {
@@ -151,7 +186,7 @@ void main() {
         .dy;
     final secondTitleTop = tester.getTopLeft(find.text('Paper 2')).dy;
 
-    expect(secondPaperTop - firstPaperBottom, inInclusiveRange(24, 44));
+    expect(secondPaperTop - firstPaperBottom, inInclusiveRange(4, 24));
     expect(secondTitleTop, greaterThan(firstPaperBottom));
   });
 

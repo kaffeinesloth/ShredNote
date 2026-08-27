@@ -304,8 +304,9 @@ class PaperStack extends StatefulWidget {
 
 class _PaperStackState extends State<PaperStack> {
   static const double _a4HeightRatio = 1.414;
-  static const double _paperWidthFactor = 0.82;
-  static const double _paperStrideFactor = 1.13;
+  static const double _paperWidthFactor = 0.70;
+  static const double _paperStrideFactor = 1.03;
+  static const double _targetVisiblePaperHeightFactor = 3.55;
   static const double _focusChangeThreshold = 0.58;
   static const Duration _snapDebounceDuration = Duration(milliseconds: 140);
   static const Duration _snapAnimationDuration = Duration(milliseconds: 420);
@@ -354,10 +355,17 @@ class _PaperStackState extends State<PaperStack> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final paperWidth = max(1.0, constraints.maxWidth * _paperWidthFactor);
-        final paperHeight = paperWidth * _a4HeightRatio;
-        final paperStride = paperHeight * _paperStrideFactor;
         final viewportHeight = constraints.maxHeight;
+        final maxPaperWidth = constraints.maxWidth * _paperWidthFactor;
+        final widthBasedPaperHeight = maxPaperWidth * _a4HeightRatio;
+        final heightBasedPaperHeight =
+            viewportHeight / _targetVisiblePaperHeightFactor;
+        final paperHeight = max(
+          1.0,
+          min(widthBasedPaperHeight, heightBasedPaperHeight),
+        );
+        final paperWidth = paperHeight / _a4HeightRatio;
+        final paperStride = paperHeight * _paperStrideFactor;
         final viewportCenter = viewportHeight / 2;
         final verticalInset = max(24.0, (viewportHeight - paperHeight) / 2);
         final stackHeight =
@@ -608,7 +616,7 @@ class _PositionedPaperPreview extends StatelessWidget {
         .clamp(0.0, 1.0);
     final focus = 1 - distance;
     final paperDistance = distanceFromFocus.clamp(0.0, 2.0);
-    final scale = max(0.82, 1.08 - paperDistance * 0.13);
+    final scale = max(0.82, 1.04 - paperDistance * 0.12);
     final widthFactor = lerpDouble(0.86, 1, focus)!;
     final shadowBlur = lerpDouble(8, 18, focus)!;
     final shadowOpacity = lerpDouble(0.12, 0.28, focus)!;
