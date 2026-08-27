@@ -1,6 +1,6 @@
 # ShredNote Project Update Log
 
-Last updated: 2026-08-26
+Last updated: 2026-08-27
 Workspace: /Volumes/Storage_01/ShredNote
 
 ## Purpose of This File
@@ -13,8 +13,9 @@ implemented, what has been verified, and what likely remains next.
 
 ShredNote is currently a Flutter application in an early prototype stage. The
 implemented UI is a desktop-style workspace with a dark left sidebar and a blank
-main workspace area. The active feature is a stacked paper-preview sidebar where
-new "paper" items can be created and selected.
+main workspace area. The active feature is a vertically scrollable paper
+carousel in the left sidebar where new "paper" items can be created, selected,
+focused, and browsed with snapping.
 
 The project still uses mostly default Flutter project metadata and platform
 scaffolding. Product behavior is concentrated in the Dart files under `lib/`.
@@ -23,16 +24,18 @@ scaffolding. Product behavior is concentrated in the Dart files under `lib/`.
 
 - Git branch: `main`
 - Remote tracking: `origin/main`
-- Local branch status at time of log creation: ahead of `origin/main` by 2 commits
-- Working tree at time of log creation: clean before creating this `UpdateLog`
+- Local branch status at time of this log update: synced with `origin/main`
+- Working tree at time of this log update: modified only by this `UpdateLog`
+  update
 - Recent commits:
+  - `1fc4397 update the left column UI mechanics`
+  - `a00c284 add UpdateLog for future use`
   - `45b13b4 fixing preview not staying on top`
   - `f8230e1 implement paper preview scrolling`
   - `2af0b70 Add paper previews to sidebar`
   - `9ee57b2 add the first 2 columns`
   - `b387af8 Create Flutter project structure`
   - `0573416 Add ShredNote development structure guide`
-  - `76c5e34 Initial ShredNote project`
 
 ## Technology Stack
 
@@ -69,12 +72,17 @@ or asset pipeline is currently configured.
   - Contains nearly all current custom app logic.
   - Implements the workspace shell.
   - Implements keyboard shortcut handling.
-  - Implements the paper list model and paper stack preview UI.
+  - Implements the in-memory paper list model.
+  - Implements the scrollable paper carousel and paper preview UI.
 
 - `test/widget_test.dart`
-  - Contains two widget tests:
-    - Verifies the app shell renders.
-    - Verifies Command+N creates an `Untitled Paper`.
+  - Contains widget tests for:
+    - App shell rendering.
+    - Command+N paper creation.
+    - A4-like paper preview proportions.
+    - Nearby-window carousel rendering.
+    - Small gap around the focused sheet.
+    - Tapping a neighbouring paper to select/focus it.
 
 - `analysis_options.yaml`
   - Uses `package:flutter_lints/flutter.yaml`.
@@ -97,7 +105,7 @@ The screen is split into two columns:
 - Left sidebar:
   - Fixed width: `260`
   - Dark background: `0xFF20272A`
-  - Contains the paper stack.
+  - Contains the paper carousel.
 
 - Main workspace:
   - Expanded to fill remaining horizontal space.
@@ -139,35 +147,48 @@ Current limitation: papers are not persisted. Restarting the app loses them.
 
 ### Paper Selection
 
-Clicking/tapping a paper preview calls `_selectPaper`, which:
+Clicking/tapping a paper preview calls the existing selection path and scrolls
+the tapped paper toward the focused carousel position.
 
-- Iterates through `_papers`.
-- Marks only the tapped paper as selected.
-- Uses `createdAt` equality as the identifier.
+Selection still works by:
+
+- Iterating through `_papers`.
+- Marking only the tapped paper as selected.
+- Using `createdAt` equality as the identifier.
 
 Current limitation: there is no stable explicit paper ID. `createdAt` is acting
 as the identity for now.
 
-### Paper Stack UI
+### Paper Carousel UI
 
 `PaperStack` is a stateful widget exposed with `@visibleForTesting`.
 
 Important constants:
 
-- Paper height: `128`
-- Vertical stride between papers: `92`
+- A4-like height ratio: `1.414`
+- Focused paper width factor: `0.82` of available sidebar width
+- Vertical stride factor: `1.13` of paper height
+- Focused paper scale: approximately `1.08`
+- Neighbour scale: approximately `0.94` at distance 1
+- Farther paper scale floor: `0.88`
 
 Behavior:
 
 - If there are no papers, it renders an empty expanded box.
-- Uses `LayoutBuilder` to calculate vertical positioning.
-- Centers a single paper vertically when possible.
+- Uses `LayoutBuilder` so paper width and height respond to the sidebar size.
+- Maintains A4-like paper proportions instead of fixed short card dimensions.
 - Wraps the stack in a `SingleChildScrollView`.
 - Uses `AnimatedBuilder` tied to the scroll controller to recalculate visual
   emphasis while scrolling.
-- Computes each paper's distance from the viewport center.
-- Sorts layout entries by distance so the more centered/focused paper is painted
-  above less focused previews. This appears to be the fix from the latest commit.
+- Calculates a focused index from scroll offset and paper stride.
+- Renders only a nearby window of papers around the focused index instead of
+  rendering every paper in large collections.
+- Sorts layout entries by distance from focus so the focused paper is painted
+  above neighbouring papers.
+- On scroll end, snaps smoothly to the nearest paper.
+- Clicking a neighbouring paper selects it and animates it toward focus.
+
+There is currently no drag-and-drop behavior in the paper preview code.
 
 ### Paper Preview Visuals
 
@@ -182,15 +203,14 @@ Visual treatment:
 
 - Paper color: `0xFFFFF7E8`
 - Border radius: `7`
+- Header top padding: `48`
 - Title color: `0xFF28241F`
 - Date color: `0xFF756D63`
 - Shadow blur and opacity vary based on center focus.
 - Selected papers get stronger shadow emphasis.
-- Width and scale are interpolated by scroll focus:
-  - Scale from `0.9` to `1.0`
-  - Width factor from `0.74` to `0.96`
-  - Shadow blur from `5` to `18`
-  - Shadow opacity from `0.12` to `0.28`
+
+The current carousel creates a small intentional gap between the enlarged
+focused sheet and adjacent papers, while still keeping the physical stack feel.
 
 ## Current Code Size
 
@@ -198,8 +218,8 @@ Approximate line counts at time of this log:
 
 - `lib/main.dart`: 7 lines
 - `lib/app.dart`: 24 lines
-- `lib/screens/workspace_screen.dart`: 438 lines
-- `test/widget_test.dart`: 27 lines
+- `lib/screens/workspace_screen.dart`: 549 lines
+- `test/widget_test.dart`: 139 lines
 - `pubspec.yaml`: 89 lines
 - `analysis_options.yaml`: 28 lines
 
@@ -208,7 +228,7 @@ file.
 
 ## Verification Status
 
-Commands run successfully on 2026-08-26:
+Commands run successfully on 2026-08-27:
 
 ```sh
 flutter analyze
@@ -230,9 +250,9 @@ Result:
 All tests passed!
 ```
 
-The current tests only cover basic rendering and the Command+N paper creation
-shortcut. They do not yet cover scrolling, visual layering, selection behavior,
-or persistence.
+Current widget tests cover the basic app shell, keyboard paper creation,
+carousel proportions, visible-window rendering, focused-paper spacing, and
+click-to-focus selection.
 
 ## Known Gaps and Limitations
 
@@ -246,8 +266,7 @@ or persistence.
 - No routing or multi-screen navigation.
 - No app settings.
 - No custom assets, icons, typography, or branding assets are configured.
-- No platform-specific app naming/icons beyond Flutter defaults have been
-  reviewed in this log.
+- No drag-and-drop behavior is currently implemented for paper previews.
 - Product/design `.docx` files exist under `Docs/`, but the running code does
   not currently appear to consume them.
 
@@ -263,9 +282,9 @@ The most logical next steps are:
 5. Build the main workspace editor for the selected paper.
 6. Add persistence, likely local-first storage.
 7. Add tests for:
-   - Multiple paper creation and titles.
-   - Selection behavior.
-   - Paper stack ordering/layering behavior.
+   - Multiple paper creation and generated titles.
+   - Scroll snapping behavior after drag/momentum settles.
+   - Explicit focused-paper paint ordering.
    - Empty state behavior.
 8. Consider splitting `workspace_screen.dart` into smaller files once editor,
    persistence, and sidebar controls are added.
@@ -288,5 +307,6 @@ flutter test
 ```
 
 Assume the app is an early-stage Flutter prototype. The current working feature
-is the animated/scrolling paper-preview stack in the left sidebar. The next major
-missing product surface is the actual note/document editor in the main panel.
+is the animated, scrollable, snapping paper carousel in the left sidebar. The
+next major missing product surface is the actual note/document editor in the
+main panel.
