@@ -1,4 +1,4 @@
-import 'dart:math' show max;
+import 'dart:math' show max, min;
 import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
@@ -162,10 +162,13 @@ class PaperStack extends StatefulWidget {
 }
 
 class _PaperStackState extends State<PaperStack> {
-  static const double _paperHeight = 128;
-  static const double _paperStride = 92;
+  static const double _a4HeightRatio = 1.414;
+  static const double _paperWidthFactor = 0.82;
+  static const double _paperStrideFactor = 1.13;
 
   late final ScrollController _scrollController;
+  bool _isSnapping = false;
+  bool _shouldAlignSelectedPaper = true;
 
   @override
   void initState() {
@@ -180,6 +183,24 @@ class _PaperStackState extends State<PaperStack> {
   }
 
   @override
+  void didUpdateWidget(covariant PaperStack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    final selectedIndex = _selectedPaperIndex;
+    if (selectedIndex == -1) {
+      return;
+    }
+
+    final oldSelectedIndex = oldWidget.papers.indexWhere(
+      (paper) => paper.isSelected,
+    );
+    if (selectedIndex != oldSelectedIndex ||
+        widget.papers.length != oldWidget.papers.length) {
+      _shouldAlignSelectedPaper = true;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     if (widget.papers.isEmpty) {
       return const SizedBox.expand();
@@ -187,65 +208,102 @@ class _PaperStackState extends State<PaperStack> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final verticalInset = max(
-          24.0,
-          (constraints.maxHeight - _paperHeight) / 2,
-        );
+        final paperWidth = max(1.0, constraints.maxWidth * _paperWidthFactor);
+        final paperHeight = paperWidth * _a4HeightRatio;
+        final paperStride = paperHeight * _paperStrideFactor;
+        final viewportHeight = constraints.maxHeight;
+        final viewportCenter = viewportHeight / 2;
+        final verticalInset = max(24.0, (viewportHeight - paperHeight) / 2);
         final stackHeight =
             verticalInset * 2 +
-            _paperHeight +
-            ((widget.papers.length - 1) * _paperStride);
+            paperHeight +
+            ((widget.papers.length - 1) * paperStride);
+        if (_shouldAlignSelectedPaper) {
+          _shouldAlignSelectedPaper = false;
+          final selectedIndex = _selectedPaperIndex;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && selectedIndex != -1) {
+              _snapToPaper(selectedIndex, paperStride, selectPaper: false);
+            }
+          });
+        }
 
         return ClipRect(
-          child: SingleChildScrollView(
-            controller: _scrollController,
-            physics: const BouncingScrollPhysics(),
-            child: SizedBox(
-              height: stackHeight,
-              child: AnimatedBuilder(
-                animation: _scrollController,
-                builder: (context, child) {
-                  final scrollOffset = _scrollController.hasClients
-                      ? _scrollController.offset
-                      : 0.0;
-                  final paperLayouts =
-                      [
-                        for (
-                          var index = 0;
-                          index < widget.papers.length;
-                          index += 1
-                        )
-                          _PaperStackLayout(
-                            paper: widget.papers[index],
-                            top: verticalInset + index * _paperStride,
-                            distanceFromCenter: _distanceFromCenter(
-                              top: verticalInset + index * _paperStride,
-                              scrollOffset: scrollOffset,
-                              viewportCenter: constraints.maxHeight / 2,
+          child: NotificationListener<ScrollEndNotification>(
+            onNotification: (notification) {
+              if (!_isSnapping) {
+                _snapToNearestPaper(paperStride);
+              }
+              return false;
+            },
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              physics: const BouncingScrollPhysics(),
+              child: SizedBox(
+                height: stackHeight,
+                child: AnimatedBuilder(
+                  animation: _scrollController,
+                  builder: (context, child) {
+                    final scrollOffset = _scrollController.hasClients
+                        ? _scrollController.offset
+                        : _targetScrollOffsetForSelectedPaper(paperStride);
+                    final focusedPosition = scrollOffset / paperStride;
+                    final focusedIndex = focusedPosition
+                        .round()
+                        .clamp(0, widget.papers.length - 1)
+                        .toInt();
+                    final visibleRadius = max(
+                      2,
+                      (viewportHeight / paperStride).ceil() + 1,
+                    );
+                    final firstVisibleIndex = max(
+                      0,
+                      focusedIndex - visibleRadius,
+                    );
+                    final lastVisibleIndex = min(
+                      widget.papers.length - 1,
+                      focusedIndex + visibleRadius,
+                    );
+                    final paperLayouts =
+                        [
+                          for (
+                            var index = firstVisibleIndex;
+                            index <= lastVisibleIndex;
+                            index += 1
+                          )
+                            _PaperStackLayout(
+                              paper: widget.papers[index],
+                              index: index,
+                              top: verticalInset + index * paperStride,
+                              distanceFromFocus: (index - focusedPosition)
+                                  .abs(),
                             ),
+                        ]..sort(
+                          (first, second) => second.distanceFromFocus.compareTo(
+                            first.distanceFromFocus,
                           ),
-                      ]..sort(
-                        (first, second) => second.distanceFromCenter.compareTo(
-                          first.distanceFromCenter,
-                        ),
-                      );
+                        );
 
-                  return Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      for (final layout in paperLayouts)
-                        _PositionedPaperPreview(
-                          paper: layout.paper,
-                          top: layout.top,
-                          scrollOffset: scrollOffset,
-                          viewportCenter: constraints.maxHeight / 2,
-                          paperHeight: _paperHeight,
-                          onTap: () =>
-                              widget.onPaperSelected?.call(layout.paper),
-                        ),
-                    ],
-                  );
-                },
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        for (final layout in paperLayouts)
+                          _PositionedPaperPreview(
+                            paper: layout.paper,
+                            top: layout.top,
+                            scrollOffset: scrollOffset,
+                            viewportCenter: viewportCenter,
+                            paperWidth: paperWidth,
+                            paperHeight: paperHeight,
+                            distanceFromFocus: layout.distanceFromFocus,
+                            onTap: () {
+                              _snapToPaper(layout.index, paperStride);
+                            },
+                          ),
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
           ),
@@ -254,30 +312,78 @@ class _PaperStackState extends State<PaperStack> {
     );
   }
 
-  double _distanceFromCenter({
-    required double top,
-    required double scrollOffset,
-    required double viewportCenter,
-  }) {
-    final paperCenter = top - scrollOffset + _paperHeight / 2;
+  int get _selectedPaperIndex {
+    return widget.papers.indexWhere((paper) => paper.isSelected);
+  }
 
-    return ((paperCenter - viewportCenter).abs() / viewportCenter).clamp(
-      0.0,
-      1.0,
-    );
+  double _targetScrollOffsetForSelectedPaper(double paperStride) {
+    final selectedIndex = _selectedPaperIndex;
+    if (selectedIndex == -1) {
+      return 0;
+    }
+
+    return selectedIndex * paperStride;
+  }
+
+  void _snapToNearestPaper(double paperStride) {
+    if (!_scrollController.hasClients || widget.papers.isEmpty) {
+      return;
+    }
+
+    final nearestIndex = (_scrollController.offset / paperStride)
+        .round()
+        .clamp(0, widget.papers.length - 1)
+        .toInt();
+
+    widget.onPaperSelected?.call(widget.papers[nearestIndex]);
+    _snapToPaper(nearestIndex, paperStride, selectPaper: false);
+  }
+
+  void _snapToPaper(int index, double paperStride, {bool selectPaper = true}) {
+    if (!_scrollController.hasClients || widget.papers.isEmpty) {
+      return;
+    }
+
+    if (selectPaper) {
+      widget.onPaperSelected?.call(widget.papers[index]);
+    }
+
+    final maxScrollExtent = _scrollController.position.maxScrollExtent;
+    final targetOffset = (index * paperStride)
+        .clamp(0.0, maxScrollExtent)
+        .toDouble();
+
+    if ((_scrollController.offset - targetOffset).abs() < 0.5) {
+      return;
+    }
+
+    _isSnapping = true;
+    _scrollController
+        .animateTo(
+          targetOffset,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+        )
+        .whenComplete(() {
+          if (mounted) {
+            _isSnapping = false;
+          }
+        });
   }
 }
 
 class _PaperStackLayout {
   const _PaperStackLayout({
     required this.paper,
+    required this.index,
     required this.top,
-    required this.distanceFromCenter,
+    required this.distanceFromFocus,
   });
 
   final PaperStackItem paper;
+  final int index;
   final double top;
-  final double distanceFromCenter;
+  final double distanceFromFocus;
 }
 
 class _PositionedPaperPreview extends StatelessWidget {
@@ -286,7 +392,9 @@ class _PositionedPaperPreview extends StatelessWidget {
     required this.top,
     required this.scrollOffset,
     required this.viewportCenter,
+    required this.paperWidth,
     required this.paperHeight,
+    required this.distanceFromFocus,
     required this.onTap,
   });
 
@@ -294,7 +402,9 @@ class _PositionedPaperPreview extends StatelessWidget {
   final double top;
   final double scrollOffset;
   final double viewportCenter;
+  final double paperWidth;
   final double paperHeight;
+  final double distanceFromFocus;
   final VoidCallback onTap;
 
   @override
@@ -303,9 +413,10 @@ class _PositionedPaperPreview extends StatelessWidget {
     final distance = ((paperCenter - viewportCenter).abs() / viewportCenter)
         .clamp(0.0, 1.0);
     final focus = 1 - distance;
-    final scale = lerpDouble(0.9, 1, focus)!;
-    final widthFactor = lerpDouble(0.74, 0.96, focus)!;
-    final shadowBlur = lerpDouble(5, 18, focus)!;
+    final paperDistance = distanceFromFocus.clamp(0.0, 2.0);
+    final scale = max(0.88, 1.08 - paperDistance * 0.14);
+    final widthFactor = lerpDouble(0.86, 1, focus)!;
+    final shadowBlur = lerpDouble(8, 18, focus)!;
     final shadowOpacity = lerpDouble(0.12, 0.28, focus)!;
 
     return Positioned(
@@ -314,8 +425,8 @@ class _PositionedPaperPreview extends StatelessWidget {
       right: 0,
       child: Align(
         alignment: Alignment.topCenter,
-        child: FractionallySizedBox(
-          widthFactor: widthFactor,
+        child: SizedBox(
+          width: paperWidth * widthFactor,
           child: Transform.scale(
             scale: scale,
             alignment: Alignment.topCenter,
@@ -389,7 +500,7 @@ class PaperPreview extends StatelessWidget {
           onTap: onTap,
           borderRadius: const BorderRadius.all(Radius.circular(7)),
           child: Ink(
-            padding: const EdgeInsets.fromLTRB(16, 40, 16, 14),
+            padding: const EdgeInsets.fromLTRB(16, 48, 16, 14),
             decoration: BoxDecoration(
               color: const Color(0xFFFFF7E8),
               borderRadius: const BorderRadius.all(Radius.circular(7)),
