@@ -12,10 +12,10 @@ implemented, what has been verified, and what likely remains next.
 ## Project Overview
 
 ShredNote is currently a Flutter application in an early prototype stage. The
-implemented UI is a desktop-style workspace with a dark left sidebar and a blank
-main workspace area. The active feature is a vertically scrollable paper
+implemented UI is a desktop-style workspace with a dark left sidebar and a
+simple main editor area. The active feature is a vertically scrollable paper
 carousel in the left sidebar where new "paper" items can be created, selected,
-focused, and browsed with snapping.
+focused, browsed with snapping, renamed, and edited independently in memory.
 
 The project still uses mostly default Flutter project metadata and platform
 scaffolding. Product behavior is concentrated in the Dart files under `lib/`.
@@ -25,8 +25,8 @@ scaffolding. Product behavior is concentrated in the Dart files under `lib/`.
 - Git branch: `main`
 - Remote tracking: `origin/main`
 - Local branch status at time of this log update: synced with `origin/main`
-- Working tree at time of this log update: modified only by this `UpdateLog`
-  update
+- Working tree at time of this log update: modified by the in-memory document
+  editor work and this `UpdateLog` update
 - Recent commits:
   - `1fc4397 update the left column UI mechanics`
   - `a00c284 add UpdateLog for future use`
@@ -74,14 +74,20 @@ or asset pipeline is currently configured.
   - Implements keyboard shortcut handling.
   - Implements the in-memory paper list model.
   - Implements the scrollable paper carousel and paper preview UI.
+  - Implements selected-paper title renaming and body editing in the main
+    workspace.
 
 - `test/widget_test.dart`
   - Contains widget tests for:
     - App shell rendering.
     - Command+N paper creation.
+    - Paper renaming updating the sidebar preview.
+    - Independent editor content per paper.
     - A4-like paper preview proportions.
     - Nearby-window carousel rendering.
     - Small gap around the focused sheet.
+    - Selected paper rendering larger than unselected neighbours.
+    - Small scroll movement not immediately snapping to another paper.
     - Tapping a neighbouring paper to select/focus it.
 
 - `analysis_options.yaml`
@@ -109,8 +115,10 @@ The screen is split into two columns:
 
 - Main workspace:
   - Expanded to fill remaining horizontal space.
-  - Blank light background: `0xFFF1E9DD`
-  - No editor, toolbar, document canvas, or content interaction yet.
+  - Light background: `0xFFF1E9DD`
+  - Shows an empty prompt until a paper is created.
+  - Shows editable selected-paper title and body text after a paper exists.
+  - No toolbar, formatting model, rich document canvas, or persistence yet.
 
 ### Keyboard Shortcut
 
@@ -136,10 +144,13 @@ When a paper is created:
 
 - Existing papers are marked unselected.
 - A new `PaperStackItem` is appended.
+- The new paper receives a generated stable runtime ID:
+  - `paper-1`, `paper-2`, `paper-3`, etc.
 - The new paper gets a generated title:
   - First paper: `Untitled Paper`
   - Later papers: `Untitled Paper 2`, `Untitled Paper 3`, etc.
 - The new paper receives `DateTime.now()` as `createdAt`.
+- The new paper starts with empty body content.
 - The new paper is marked selected.
 - The list is sorted by `createdAt` ascending.
 
@@ -154,10 +165,31 @@ Selection still works by:
 
 - Iterating through `_papers`.
 - Marking only the tapped paper as selected.
-- Using `createdAt` equality as the identifier.
+- Using the paper's stable runtime `id` as the identifier.
 
-Current limitation: there is no stable explicit paper ID. `createdAt` is acting
-as the identity for now.
+Current limitation: IDs are stable for the current app run only because there is
+no persistence layer yet.
+
+### Main Workspace Editor
+
+The main workspace now contains a basic plain-text editor for the selected
+paper.
+
+Behavior:
+
+- If no paper exists, the workspace prompts the user to press Command+N.
+- Creating a paper selects it and syncs the title/body editor controllers to
+  that paper.
+- Typing in the title field renames the selected paper and updates the sidebar
+  preview immediately.
+- Typing in the editor updates the selected paper's `content` field.
+- Switching to another paper syncs the editor to that paper's saved in-memory
+  title and content.
+- Switching back to a previous paper restores that paper's own content.
+
+The editor is intentionally basic. It uses plain `TextField` controls with no
+formatting, blocks, markdown preview, attachments, persistence, undo model, or
+file backing.
 
 ### Paper Carousel UI
 
@@ -169,8 +201,8 @@ Important constants:
 - Focused paper width factor: `0.82` of available sidebar width
 - Vertical stride factor: `1.13` of paper height
 - Focused paper scale: approximately `1.08`
-- Neighbour scale: approximately `0.94` at distance 1
-- Farther paper scale floor: `0.88`
+- Neighbour scale: approximately `0.95`
+- Farther paper scale floor: `0.82`
 
 Behavior:
 
@@ -185,7 +217,17 @@ Behavior:
   rendering every paper in large collections.
 - Sorts layout entries by distance from focus so the focused paper is painted
   above neighbouring papers.
-- On scroll end, snaps smoothly to the nearest paper.
+- Calculates paper width, scale, and shadow directly from scroll position so
+  scrolling stays responsive and does not restart implicit animations every
+  frame.
+- Delays selection changes from scroll/tap until after the snap motion, so the
+  paper does not suddenly jump bigger before it reaches focus.
+- Debounces scroll-end snapping by `140ms` so wheel/trackpad momentum can settle
+  before the carousel decides on a resting paper.
+- Uses a focus-change threshold of `0.58` paper strides from the currently
+  selected paper, so small scroll movements settle back instead of immediately
+  selecting the next paper.
+- Snaps with a `420ms` ease-out animation.
 - Clicking a neighbouring paper selects it and animates it toward focus.
 
 There is currently no drag-and-drop behavior in the paper preview code.
@@ -218,8 +260,8 @@ Approximate line counts at time of this log:
 
 - `lib/main.dart`: 7 lines
 - `lib/app.dart`: 24 lines
-- `lib/screens/workspace_screen.dart`: 549 lines
-- `test/widget_test.dart`: 139 lines
+- `lib/screens/workspace_screen.dart`: 748 lines
+- `test/widget_test.dart`: 267 lines
 - `pubspec.yaml`: 89 lines
 - `analysis_options.yaml`: 28 lines
 
@@ -251,16 +293,18 @@ All tests passed!
 ```
 
 Current widget tests cover the basic app shell, keyboard paper creation,
-carousel proportions, visible-window rendering, focused-paper spacing, and
-click-to-focus selection.
+paper renaming, independent editor content per paper, carousel proportions,
+visible-window rendering, focused-paper spacing, selected-paper scale emphasis,
+small-scroll snap resistance, and click-to-focus selection.
 
 ## Known Gaps and Limitations
 
 - README is still the default Flutter README and does not describe ShredNote.
 - No persistent storage for papers.
-- No real note editor or document canvas in the main workspace.
-- No note content model beyond title, creation date, and selected state.
-- No stable ID field for paper identity.
+- Main workspace editor is plain text only and still early.
+- No rich note/document canvas in the main workspace.
+- Paper content exists only in memory.
+- Paper IDs are stable only within the current app run.
 - No rename/edit/delete/reorder behavior for papers.
 - No sidebar controls or visible "new paper" button.
 - No routing or multi-screen navigation.
@@ -277,16 +321,13 @@ The most logical next steps are:
 1. Update `README.md` so it reflects the actual ShredNote project.
 2. Add a visible new-paper control in the sidebar, alongside the existing
    Command+N shortcut.
-3. Introduce a stable paper ID instead of using `createdAt` as identity.
-4. Add a paper content model with title/body fields.
-5. Build the main workspace editor for the selected paper.
-6. Add persistence, likely local-first storage.
-7. Add tests for:
+3. Add persistence, likely local-first storage.
+4. Add delete/reorder behavior for papers.
+5. Add tests for:
    - Multiple paper creation and generated titles.
-   - Scroll snapping behavior after drag/momentum settles.
    - Explicit focused-paper paint ordering.
    - Empty state behavior.
-8. Consider splitting `workspace_screen.dart` into smaller files once editor,
+6. Consider splitting `workspace_screen.dart` into smaller files once editor,
    persistence, and sidebar controls are added.
 
 ## Quick Start for Another AI
@@ -307,6 +348,6 @@ flutter test
 ```
 
 Assume the app is an early-stage Flutter prototype. The current working feature
-is the animated, scrollable, snapping paper carousel in the left sidebar. The
-next major missing product surface is the actual note/document editor in the
-main panel.
+is the animated, scrollable, snapping paper carousel in the left sidebar plus a
+basic in-memory title/body editor in the main panel. The next major missing
+product layer is persistence.

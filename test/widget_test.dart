@@ -9,6 +9,7 @@ void main() {
     return [
       for (var index = 0; index < count; index += 1)
         PaperStackItem(
+          id: 'paper-${index + 1}',
           title: 'Paper ${index + 1}',
           createdAt: DateTime(2026, 8, 27, 12, index),
           isSelected: index == selectedIndex,
@@ -51,7 +52,70 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
     await tester.pump();
 
-    expect(find.text('Untitled Paper'), findsOneWidget);
+    expect(find.text('Untitled Paper'), findsWidgets);
+    expect(find.text('Start writing...'), findsOneWidget);
+  });
+
+  testWidgets('renaming a paper updates its preview title', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('title-editor-paper-1')),
+      'Project Plan',
+    );
+    await tester.pump();
+
+    expect(find.widgetWithText(PaperPreview, 'Project Plan'), findsOneWidget);
+  });
+
+  testWidgets('each paper keeps its own editor content', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('editor-paper-1')),
+      'First paper content',
+    );
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Untitled Paper 2'), findsWidgets);
+    expect(find.text('First paper content'), findsNothing);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('editor-paper-2')),
+      'Second paper content',
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Untitled Paper').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('First paper content'), findsOneWidget);
+
+    await tester.tap(find.text('Untitled Paper 2').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Second paper content'), findsOneWidget);
   });
 
   testWidgets('paper previews keep an A4-like vertical proportion', (
@@ -91,6 +155,71 @@ void main() {
     expect(secondTitleTop, greaterThan(firstPaperBottom));
   });
 
+  testWidgets('selected paper renders larger than unselected neighbours', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      paperStackFixture(papers: papers(3, selectedIndex: 1)),
+    );
+    await tester.pumpAndSettle();
+
+    final selectedRect = tester.getRect(
+      find.widgetWithText(PaperPreview, 'Paper 2'),
+    );
+    final unselectedRect = tester.getRect(
+      find.widgetWithText(PaperPreview, 'Paper 1'),
+    );
+
+    expect(selectedRect.width, greaterThan(unselectedRect.width));
+    expect(selectedRect.height, greaterThan(unselectedRect.height));
+  });
+
+  testWidgets('small scroll does not immediately snap to another paper', (
+    WidgetTester tester,
+  ) async {
+    var currentPapers = papers(5);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            return Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 260,
+                height: 600,
+                child: PaperStack(
+                  papers: currentPapers,
+                  onPaperSelected: (selectedPaper) {
+                    setState(() {
+                      currentPapers = [
+                        for (final paper in currentPapers)
+                          paper.copyWith(
+                            isSelected: paper.id == selectedPaper.id,
+                          ),
+                      ];
+                    });
+                  },
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.drag(find.byType(PaperStack), const Offset(0, -90));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    final selectedTitles = tester
+        .widgetList<PaperPreview>(find.byType(PaperPreview))
+        .where((preview) => preview.paper.isSelected)
+        .map((preview) => preview.paper.title);
+
+    expect(selectedTitles, contains('Paper 1'));
+  });
+
   testWidgets('tapping a neighbouring paper selects it', (
     WidgetTester tester,
   ) async {
@@ -112,8 +241,7 @@ void main() {
                       currentPapers = [
                         for (final paper in currentPapers)
                           paper.copyWith(
-                            isSelected:
-                                paper.createdAt == selectedPaper.createdAt,
+                            isSelected: paper.id == selectedPaper.id,
                           ),
                       ];
                     });
@@ -127,7 +255,7 @@ void main() {
     );
 
     await tester.tap(find.text('Paper 2'));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     final selectedTitles = tester
         .widgetList<PaperPreview>(find.byType(PaperPreview))

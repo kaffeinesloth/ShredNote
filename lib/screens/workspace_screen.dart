@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' show max, min;
 import 'dart:ui' show lerpDouble;
 
@@ -13,9 +14,12 @@ class WorkspaceScreen extends StatefulWidget {
 
 class _WorkspaceScreenState extends State<WorkspaceScreen> {
   final List<PaperStackItem> _papers = [];
+  final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _editorController = TextEditingController();
   final FocusNode _shortcutFocusNode = FocusNode(
     debugLabel: 'WorkspaceShortcuts',
   );
+  int _nextPaperSequence = 1;
 
   @override
   void initState() {
@@ -29,29 +33,32 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   @override
   void dispose() {
+    _titleController.dispose();
+    _editorController.dispose();
     _shortcutFocusNode.dispose();
     super.dispose();
   }
 
   void _addPaper() {
     final createdAt = DateTime.now();
+    final paper = PaperStackItem(
+      id: 'paper-${_nextPaperSequence++}',
+      title: _nextPaperTitle(),
+      createdAt: createdAt,
+      isSelected: true,
+    );
 
     setState(() {
       for (var index = 0; index < _papers.length; index += 1) {
         _papers[index] = _papers[index].copyWith(isSelected: false);
       }
 
-      _papers.add(
-        PaperStackItem(
-          title: _nextPaperTitle(),
-          createdAt: createdAt,
-          isSelected: true,
-        ),
-      );
+      _papers.add(paper);
       _papers.sort(
         (first, second) => first.createdAt.compareTo(second.createdAt),
       );
     });
+    _syncEditorWithPaper(paper);
   }
 
   String _nextPaperTitle() {
@@ -70,10 +77,59 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         final paper = _papers[index];
 
         _papers[index] = paper.copyWith(
-          isSelected: paper.createdAt == selectedPaper.createdAt,
+          isSelected: paper.id == selectedPaper.id,
         );
       }
     });
+    _syncEditorWithPaper(selectedPaper);
+  }
+
+  void _updateSelectedPaperContent(String content) {
+    final selectedIndex = _selectedPaperIndex;
+    if (selectedIndex == -1) {
+      return;
+    }
+
+    setState(() {
+      _papers[selectedIndex] = _papers[selectedIndex].copyWith(
+        content: content,
+      );
+    });
+  }
+
+  void _updateSelectedPaperTitle(String title) {
+    final selectedIndex = _selectedPaperIndex;
+    if (selectedIndex == -1) {
+      return;
+    }
+
+    setState(() {
+      _papers[selectedIndex] = _papers[selectedIndex].copyWith(title: title);
+    });
+  }
+
+  int get _selectedPaperIndex {
+    return _papers.indexWhere((paper) => paper.isSelected);
+  }
+
+  PaperStackItem? get _selectedPaper {
+    final selectedIndex = _selectedPaperIndex;
+    if (selectedIndex == -1) {
+      return null;
+    }
+
+    return _papers[selectedIndex];
+  }
+
+  void _syncEditorWithPaper(PaperStackItem paper) {
+    _titleController.value = TextEditingValue(
+      text: paper.title,
+      selection: TextSelection.collapsed(offset: paper.title.length),
+    );
+    _editorController.value = TextEditingValue(
+      text: paper.content,
+      selection: TextSelection.collapsed(offset: paper.content.length),
+    );
   }
 
   @override
@@ -95,15 +151,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         child: Focus(
           focusNode: _shortcutFocusNode,
           autofocus: true,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _shortcutFocusNode.requestFocus,
-            child: Scaffold(
-              body: SafeArea(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SizedBox(
+          child: Scaffold(
+            body: SafeArea(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _shortcutFocusNode.requestFocus,
+                    child: SizedBox(
                       width: 260,
                       child: DecoratedBox(
                         decoration: const BoxDecoration(
@@ -115,13 +171,20 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                         ),
                       ),
                     ),
-                    const Expanded(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(color: Color(0xFFF1E9DD)),
+                  ),
+                  Expanded(
+                    child: DecoratedBox(
+                      decoration: const BoxDecoration(color: Color(0xFFF1E9DD)),
+                      child: _WorkspaceEditor(
+                        paper: _selectedPaper,
+                        titleController: _titleController,
+                        controller: _editorController,
+                        onTitleChanged: _updateSelectedPaperTitle,
+                        onContentChanged: _updateSelectedPaperContent,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -150,6 +213,84 @@ class _NotesSidebar extends StatelessWidget {
   }
 }
 
+class _WorkspaceEditor extends StatelessWidget {
+  const _WorkspaceEditor({
+    required this.paper,
+    required this.titleController,
+    required this.controller,
+    required this.onTitleChanged,
+    required this.onContentChanged,
+  });
+
+  final PaperStackItem? paper;
+  final TextEditingController titleController;
+  final TextEditingController controller;
+  final ValueChanged<String> onTitleChanged;
+  final ValueChanged<String> onContentChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    if (paper == null) {
+      return const Center(
+        child: Text(
+          'Press Command+N to create a paper',
+          style: TextStyle(
+            color: Color(0xFF756D63),
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(40),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            key: ValueKey('title-editor-${paper!.id}'),
+            controller: titleController,
+            onChanged: onTitleChanged,
+            decoration: const InputDecoration(
+              hintText: 'Untitled Paper',
+              border: InputBorder.none,
+              isCollapsed: true,
+            ),
+            style: const TextStyle(
+              color: Color(0xFF28241F),
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Expanded(
+            child: TextField(
+              key: ValueKey('editor-${paper!.id}'),
+              controller: controller,
+              onChanged: onContentChanged,
+              expands: true,
+              maxLines: null,
+              minLines: null,
+              textAlignVertical: TextAlignVertical.top,
+              decoration: const InputDecoration(
+                hintText: 'Start writing...',
+                border: InputBorder.none,
+                isCollapsed: true,
+              ),
+              style: const TextStyle(
+                color: Color(0xFF28241F),
+                fontSize: 18,
+                height: 1.45,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 @visibleForTesting
 class PaperStack extends StatefulWidget {
   const PaperStack({super.key, required this.papers, this.onPaperSelected});
@@ -165,8 +306,12 @@ class _PaperStackState extends State<PaperStack> {
   static const double _a4HeightRatio = 1.414;
   static const double _paperWidthFactor = 0.82;
   static const double _paperStrideFactor = 1.13;
+  static const double _focusChangeThreshold = 0.58;
+  static const Duration _snapDebounceDuration = Duration(milliseconds: 140);
+  static const Duration _snapAnimationDuration = Duration(milliseconds: 420);
 
   late final ScrollController _scrollController;
+  Timer? _snapDebounceTimer;
   bool _isSnapping = false;
   bool _shouldAlignSelectedPaper = true;
 
@@ -178,6 +323,7 @@ class _PaperStackState extends State<PaperStack> {
 
   @override
   void dispose() {
+    _snapDebounceTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -229,11 +375,17 @@ class _PaperStackState extends State<PaperStack> {
         }
 
         return ClipRect(
-          child: NotificationListener<ScrollEndNotification>(
+          child: NotificationListener<ScrollNotification>(
             onNotification: (notification) {
-              if (!_isSnapping) {
-                _snapToNearestPaper(paperStride);
+              if (notification is ScrollStartNotification ||
+                  notification is ScrollUpdateNotification) {
+                _snapDebounceTimer?.cancel();
               }
+
+              if (notification is ScrollEndNotification && !_isSnapping) {
+                _scheduleSnapToRestingPaper(paperStride);
+              }
+
               return false;
             },
             child: SingleChildScrollView(
@@ -297,7 +449,12 @@ class _PaperStackState extends State<PaperStack> {
                             paperHeight: paperHeight,
                             distanceFromFocus: layout.distanceFromFocus,
                             onTap: () {
-                              _snapToPaper(layout.index, paperStride);
+                              _snapToPaper(
+                                layout.index,
+                                paperStride,
+                                selectPaper: true,
+                                selectAfterSnap: true,
+                              );
                             },
                           ),
                       ],
@@ -330,21 +487,48 @@ class _PaperStackState extends State<PaperStack> {
       return;
     }
 
-    final nearestIndex = (_scrollController.offset / paperStride)
-        .round()
-        .clamp(0, widget.papers.length - 1)
-        .toInt();
+    final restingIndex = _restingPaperIndex(paperStride);
 
-    widget.onPaperSelected?.call(widget.papers[nearestIndex]);
-    _snapToPaper(nearestIndex, paperStride, selectPaper: false);
+    _snapToPaper(
+      restingIndex,
+      paperStride,
+      selectPaper: true,
+      selectAfterSnap: true,
+    );
   }
 
-  void _snapToPaper(int index, double paperStride, {bool selectPaper = true}) {
+  void _scheduleSnapToRestingPaper(double paperStride) {
+    _snapDebounceTimer?.cancel();
+    _snapDebounceTimer = Timer(_snapDebounceDuration, () {
+      if (mounted) {
+        _snapToNearestPaper(paperStride);
+      }
+    });
+  }
+
+  int _restingPaperIndex(double paperStride) {
+    final selectedIndex = _selectedPaperIndex;
+    final focusedPosition = _scrollController.offset / paperStride;
+
+    if (selectedIndex != -1 &&
+        (focusedPosition - selectedIndex).abs() < _focusChangeThreshold) {
+      return selectedIndex;
+    }
+
+    return focusedPosition.round().clamp(0, widget.papers.length - 1).toInt();
+  }
+
+  Future<void> _snapToPaper(
+    int index,
+    double paperStride, {
+    bool selectPaper = true,
+    bool selectAfterSnap = false,
+  }) async {
     if (!_scrollController.hasClients || widget.papers.isEmpty) {
       return;
     }
 
-    if (selectPaper) {
+    if (selectPaper && !selectAfterSnap) {
       widget.onPaperSelected?.call(widget.papers[index]);
     }
 
@@ -354,21 +538,28 @@ class _PaperStackState extends State<PaperStack> {
         .toDouble();
 
     if ((_scrollController.offset - targetOffset).abs() < 0.5) {
+      if (selectPaper && selectAfterSnap) {
+        widget.onPaperSelected?.call(widget.papers[index]);
+      }
       return;
     }
 
     _isSnapping = true;
-    _scrollController
-        .animateTo(
-          targetOffset,
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOutCubic,
-        )
-        .whenComplete(() {
-          if (mounted) {
-            _isSnapping = false;
-          }
-        });
+    try {
+      await _scrollController.animateTo(
+        targetOffset,
+        duration: _snapAnimationDuration,
+        curve: Curves.easeOutCubic,
+      );
+
+      if (mounted && selectPaper && selectAfterSnap) {
+        widget.onPaperSelected?.call(widget.papers[index]);
+      }
+    } finally {
+      if (mounted) {
+        _isSnapping = false;
+      }
+    }
   }
 }
 
@@ -414,7 +605,7 @@ class _PositionedPaperPreview extends StatelessWidget {
         .clamp(0.0, 1.0);
     final focus = 1 - distance;
     final paperDistance = distanceFromFocus.clamp(0.0, 2.0);
-    final scale = max(0.88, 1.08 - paperDistance * 0.14);
+    final scale = max(0.82, 1.08 - paperDistance * 0.13);
     final widthFactor = lerpDouble(0.86, 1, focus)!;
     final shadowBlur = lerpDouble(8, 18, focus)!;
     final shadowOpacity = lerpDouble(0.12, 0.28, focus)!;
@@ -447,23 +638,31 @@ class _PositionedPaperPreview extends StatelessWidget {
 @visibleForTesting
 class PaperStackItem {
   const PaperStackItem({
+    required this.id,
     required this.title,
     required this.createdAt,
+    this.content = '',
     this.isSelected = false,
   });
 
+  final String id;
   final String title;
   final DateTime createdAt;
+  final String content;
   final bool isSelected;
 
   PaperStackItem copyWith({
+    String? id,
     String? title,
     DateTime? createdAt,
+    String? content,
     bool? isSelected,
   }) {
     return PaperStackItem(
+      id: id ?? this.id,
       title: title ?? this.title,
       createdAt: createdAt ?? this.createdAt,
+      content: content ?? this.content,
       isSelected: isSelected ?? this.isSelected,
     );
   }
