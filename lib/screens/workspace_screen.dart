@@ -22,6 +22,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     debugLabel: 'WorkspaceShortcuts',
   );
   final FocusNode _editorFocusNode = FocusNode(debugLabel: 'PaperBodyEditor');
+  String _lastEditorText = '';
   int _nextPaperSequence = 1;
 
   @override
@@ -102,11 +103,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   void _handleEditorContentChanged(String content) {
-    final inlineExitResult = _inlineStyleExitOnEnterReplacement();
+    final previousEditorText = _lastEditorText;
+    final inlineContinueResult = _inlineStyleContinueOnEnterReplacement();
 
-    if (inlineExitResult != null) {
-      _editorController.value = inlineExitResult;
-      _updateSelectedPaperContent(inlineExitResult.text);
+    if (inlineContinueResult != null) {
+      _editorController.value = inlineContinueResult;
+      _updateSelectedPaperContent(inlineContinueResult.text);
+      _lastEditorText = inlineContinueResult.text;
       return;
     }
 
@@ -115,10 +118,23 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     if (commandResult != null) {
       _editorController.value = commandResult;
       _updateSelectedPaperContent(commandResult.text);
+      _lastEditorText = commandResult.text;
+      return;
+    }
+
+    final listContinuationResult = _listContinuationOnEnterReplacement(
+      previousEditorText,
+    );
+
+    if (listContinuationResult != null) {
+      _editorController.value = listContinuationResult;
+      _updateSelectedPaperContent(listContinuationResult.text);
+      _lastEditorText = listContinuationResult.text;
       return;
     }
 
     _updateSelectedPaperContent(content);
+    _lastEditorText = content;
   }
 
   TextEditingValue? _completedLineCommandReplacement() {
@@ -160,7 +176,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
-  TextEditingValue? _inlineStyleExitOnEnterReplacement() {
+  TextEditingValue? _inlineStyleContinueOnEnterReplacement() {
     final value = _editorController.value;
     final text = value.text;
     final selectionOffset = value.selection.extentOffset;
@@ -174,7 +190,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     final styles = [
       (openingMarker: '<u>', closingMarker: '</u>', skipDoubleAsterisks: false),
       (openingMarker: '**', closingMarker: '**', skipDoubleAsterisks: false),
-      (openingMarker: '*', closingMarker: '*', skipDoubleAsterisks: true),
+      (openingMarker: '_', closingMarker: '_', skipDoubleAsterisks: false),
     ];
 
     for (final style in styles) {
@@ -194,13 +210,24 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         continue;
       }
 
-      final replacement = '${style.closingMarker}\n';
+      final currentLineStart =
+          text.lastIndexOf('\n', max(0, selectionOffset - 2)) + 1;
+      final currentLine = text.substring(currentLineStart, selectionOffset - 1);
+      final listMarker = _listMarkerForLine(currentLine) ?? '';
+      final replacement =
+          '${style.closingMarker}\n$listMarker${style.openingMarker}${style.closingMarker}';
       final updatedText = text.replaceRange(
         selectionOffset - 1,
         selectionOffset + style.closingMarker.length,
         replacement,
       );
-      final updatedOffset = selectionOffset - 1 + replacement.length;
+      final updatedOffset =
+          selectionOffset -
+          1 +
+          style.closingMarker.length +
+          1 +
+          listMarker.length +
+          style.openingMarker.length;
 
       return TextEditingValue(
         text: updatedText,
@@ -209,6 +236,83 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     }
 
     return null;
+  }
+
+  TextEditingValue? _listContinuationOnEnterReplacement(String previousText) {
+    final value = _editorController.value;
+    final text = value.text;
+    final selectionOffset = value.selection.extentOffset;
+
+    if (selectionOffset <= 0 ||
+        selectionOffset > text.length ||
+        text.codeUnitAt(selectionOffset - 1) != 10) {
+      return null;
+    }
+
+    final insertedNewline =
+        text.length == previousText.length + 1 &&
+        text.replaceRange(selectionOffset - 1, selectionOffset, '') ==
+            previousText;
+    if (!insertedNewline) {
+      return null;
+    }
+
+    final previousLineEnd = selectionOffset - 1;
+    final previousLineStart =
+        text.lastIndexOf('\n', max(0, previousLineEnd - 1)) + 1;
+    final previousLine = text.substring(previousLineStart, previousLineEnd);
+    final marker = _listMarkerForLine(previousLine);
+
+    if (marker == null) {
+      return null;
+    }
+
+    if (previousLine.length == marker.length) {
+      if (marker.trim() != '+') {
+        return null;
+      }
+
+      final updatedText = text.replaceRange(
+        previousLineStart,
+        selectionOffset,
+        '- ',
+      );
+
+      return TextEditingValue(
+        text: updatedText,
+        selection: TextSelection.collapsed(offset: previousLineStart + 2),
+      );
+    }
+
+    if (text.startsWith(marker, selectionOffset)) {
+      return null;
+    }
+
+    final updatedText = text.replaceRange(
+      selectionOffset,
+      selectionOffset,
+      marker,
+    );
+    final updatedOffset = selectionOffset + marker.length;
+
+    return TextEditingValue(
+      text: updatedText,
+      selection: TextSelection.collapsed(offset: updatedOffset),
+    );
+  }
+
+  String? _listMarkerForLine(String line) {
+    final markerStart = line.indexOf(RegExp(r'[^ ]'));
+    if (markerStart == -1) {
+      return null;
+    }
+
+    final marker = line.substring(markerStart);
+    if (!marker.startsWith('- ') && !marker.startsWith('+ ')) {
+      return null;
+    }
+
+    return '${line.substring(0, markerStart)}${marker.substring(0, 2)}';
   }
 
   bool _hasUnclosedInlineMarkerBeforeCursor(
@@ -314,6 +418,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       text: paper.content,
       selection: TextSelection.collapsed(offset: paper.content.length),
     );
+    _lastEditorText = paper.content;
   }
 
   void _toggleSelectedPaperBold() {
@@ -321,7 +426,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   void _toggleSelectedPaperItalic() {
-    _toggleSelectedPaperInlineStyle(openingMarker: '*', closingMarker: '*');
+    _toggleSelectedPaperInlineStyle(openingMarker: '_', closingMarker: '_');
   }
 
   void _toggleSelectedPaperUnderline() {
@@ -329,6 +434,51 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       openingMarker: '<u>',
       closingMarker: '</u>',
     );
+  }
+
+  void _promoteCurrentListMarker() {
+    if (_selectedPaperIndex == -1 || !_editorFocusNode.hasFocus) {
+      return;
+    }
+
+    final value = _editorController.value;
+    final selection = value.selection;
+    if (!selection.isValid) {
+      return;
+    }
+
+    final text = value.text;
+    final cursor = selection.extentOffset;
+    final lineStart = text.lastIndexOf('\n', max(0, cursor - 1)) + 1;
+    final lineEnd = text.indexOf('\n', lineStart);
+    final line = text.substring(
+      lineStart,
+      lineEnd == -1 ? text.length : lineEnd,
+    );
+    final markerStart = line.indexOf(RegExp(r'[^ ]'));
+
+    if (markerStart == -1 || !line.startsWith('- ', markerStart)) {
+      return;
+    }
+
+    final markerOffset = lineStart + markerStart;
+    final updatedText = text.replaceRange(
+      markerOffset,
+      markerOffset + 2,
+      '  + ',
+    );
+    final offsetDelta = 2;
+    final updatedSelection = TextSelection(
+      baseOffset: selection.baseOffset + offsetDelta,
+      extentOffset: selection.extentOffset + offsetDelta,
+    );
+
+    _editorController.value = TextEditingValue(
+      text: updatedText,
+      selection: updatedSelection,
+    );
+    _updateSelectedPaperContent(updatedText);
+    _lastEditorText = updatedText;
   }
 
   void _toggleSelectedPaperInlineStyle({
@@ -405,6 +555,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       selection: updatedSelection,
     );
     _updateSelectedPaperContent(updatedText);
+    _lastEditorText = updatedText;
   }
 
   @override
@@ -419,6 +570,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             const ToggleItalicIntent(),
         const SingleActivator(LogicalKeyboardKey.keyU, meta: true):
             const ToggleUnderlineIntent(),
+        const SingleActivator(LogicalKeyboardKey.tab):
+            const PromoteListMarkerIntent(),
       },
       child: Actions(
         actions: <Type, Action<Intent>>{
@@ -443,6 +596,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           ToggleUnderlineIntent: CallbackAction<ToggleUnderlineIntent>(
             onInvoke: (intent) {
               _toggleSelectedPaperUnderline();
+              return null;
+            },
+          ),
+          PromoteListMarkerIntent: CallbackAction<PromoteListMarkerIntent>(
+            onInvoke: (intent) {
+              _promoteCurrentListMarker();
               return null;
             },
           ),
@@ -508,6 +667,10 @@ class ToggleItalicIntent extends Intent {
 
 class ToggleUnderlineIntent extends Intent {
   const ToggleUnderlineIntent();
+}
+
+class PromoteListMarkerIntent extends Intent {
+  const PromoteListMarkerIntent();
 }
 
 class PaperEditingController extends TextEditingController {
@@ -618,10 +781,9 @@ class PaperEditingController extends TextEditingController {
       ),
       ?_delimitedMatch(
         source,
-        openingMarker: '*',
-        closingMarker: '*',
+        openingMarker: '_',
+        closingMarker: '_',
         styleBuilder: (style) => style.copyWith(fontStyle: FontStyle.italic),
-        skipDoubleAsterisks: true,
       ),
     ]..sort((first, second) => first.openStart.compareTo(second.openStart));
 

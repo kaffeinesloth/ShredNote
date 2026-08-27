@@ -42,14 +42,20 @@ scaffolding. Product behavior is concentrated in the Dart files under `lib/`.
 The current program progress stage is lightweight selected-paper editing
 commands. The latest working-tree changes add markdown-style body editing:
 `Command+B` wraps selected text in bold markers or inserts an empty bold pair,
-`Command+I` wraps selected text in italic markers, `Command+U` wraps selected
+`Command+I` wraps selected text in `_italic_` markers, `Command+U` wraps selected
 text in markdown-friendly underline HTML, typing `/h`, `/hh`, or `/hhh` then
 Enter creates progressively smaller heading lines, and typing `/l` then Enter
-creates a bullet line. Heading, bold, italic, and underline markdown markers
+creates a `- ` bullet line. Pressing Enter after a populated `- ` or `+ ` list
+line continues the same marker and indentation on the next line, and pressing
+Tab on a `- ` line indents it into a nested `  + ` line. Deleting an empty
+auto-created list marker now exits the list instead of immediately recreating
+the marker. Pressing Enter on an empty nested `  + ` marker returns to the
+outer `- ` list level. Heading, bold, italic, and underline markdown markers
 are hidden in the editor display while remaining in stored content.
 Pressing Enter at the visible end of styled inline text now moves the closing
-bold, italic, or underline marker before the newline, so the next line starts
-outside the style.
+bold, italic, or underline marker before the newline and opens a fresh matching
+style pair on the next line. When this happens inside a list item, the next line
+also keeps the current list marker and indentation.
 Pressing the active inline shortcut again while the cursor is before its hidden
 closing marker now moves the cursor after that marker, allowing normal typing to
 continue on the same line without corrupting the stored markdown syntax.
@@ -124,13 +130,20 @@ or asset pipeline is currently configured.
     - Command+I italic marker insertion around selected editor text.
     - Command+U underline tag insertion around selected editor text.
     - Hidden italic/underline marker rendering while preserving markdown text.
-    - Enter normalization that exits bold, italic, and underline spans before
+    - Enter normalization that continues bold, italic, and underline modes on
       the next line.
+    - Combined list and inline-format Enter continuation.
     - Collapsed cursor shortcut exit behavior for returning to normal typing
       after bold, italic, or underline insertion.
     - `/h`, `/hh`, and `/hhh` + Enter heading command transformations.
     - Hidden heading-marker rendering while preserving markdown text.
     - `/l` + Enter bullet-list command transformation.
+    - Enter continuation for `- ` and indented `+ ` list lines.
+    - Tab indentation from `- ` list markers to nested `  + ` list markers.
+    - Empty nested-list Enter dedent from `  + ` back to outer `- `.
+    - List continuation stopping when the next line no longer starts with a
+      supported list marker, including after deleting an empty auto-created
+      marker.
     - A4-like paper preview proportions.
     - Nearby-window carousel rendering.
     - Smaller paper sizing exposing more nearby previews.
@@ -253,8 +266,8 @@ Behavior:
 - `Command+B` in the body editor toggles `**bold**` markers for selected text.
 - With no selection, `Command+B` inserts `****` and places the cursor between
   the markers.
-- `Command+I` in the body editor toggles `*italic*` markers for selected text.
-- With no selection, `Command+I` inserts `**` and places the cursor between the
+- `Command+I` in the body editor toggles `_italic_` markers for selected text.
+- With no selection, `Command+I` inserts `__` and places the cursor between the
   markers.
 - `Command+U` in the body editor toggles `<u>underline</u>` tags for selected
   text.
@@ -264,14 +277,24 @@ Behavior:
 - Typing `/hh` and pressing Enter replaces that command line with `## `.
 - Typing `/hhh` and pressing Enter replaces that command line with `### `.
 - Typing `/l` and pressing Enter replaces that command line with `- `.
+- Pressing Enter after a populated `- ` or indented `+ ` list line inserts the
+  same marker and indentation at the start of the next line.
+- Pressing Tab while the body cursor is on a `- ` list line changes that marker
+  to nested `  + `; subsequent Enter presses continue with `  + `.
+- Pressing Enter on an empty nested `  + ` line changes it to an outer `- `
+  marker.
+- List continuation ends naturally once the user removes or changes the leading
+  list marker, including when deleting an empty marker created by Enter.
 - Body text is rendered through `PaperEditingController`, which visually styles
   heading lines, bold spans, italic spans, and underlined spans while keeping
   the stored content markdown-like. Leading heading markers, paired inline
   markers, and underline tags are hidden in the editor view, so users see styled
   text instead of markdown syntax.
 - Pressing Enter at the visible end of a bold, italic, or underlined span
-  normalizes the stored text from forms like `**text\n**` to `**text**\n`, so
-  inline formatting does not leak onto the next line or reveal closing markers.
+  normalizes the stored text from forms like `**text\n**` to `**text**\n****`,
+  so the current line closes cleanly and the next line starts inside a fresh
+  matching style pair. Inside list items, the new line also receives the current
+  list marker, such as `- ` or `  + `.
 - Pressing the same inline shortcut again while the cursor is before a hidden
   closing marker moves the cursor after that marker. This lets users type bold,
   italic, or underlined text and then continue normal text on the same line.
@@ -367,9 +390,9 @@ Approximate line counts at time of this log:
 
 - `lib/main.dart`: 7 lines
 - `lib/app.dart`: 24 lines
-- `lib/screens/workspace_screen.dart`: 1355 lines
+- `lib/screens/workspace_screen.dart`: 1517 lines
 - `macos/Runner/MainFlutterWindow.swift`: 35 lines
-- `test/widget_test.dart`: 721 lines
+- `test/widget_test.dart`: 972 lines
 - `pubspec.yaml`: 89 lines
 - `analysis_options.yaml`: 28 lines
 
@@ -414,12 +437,14 @@ Current widget tests cover the basic app shell, keyboard paper creation,
 paper renaming, independent editor content per paper, Command+B bold markers,
 hidden bold-marker rendering, Command+I italic markers, Command+U underline
 tags, hidden italic/underline marker rendering, Enter normalization for inline
-formatting, collapsed inline shortcut exit behavior, slash-command heading and
-bullet transformations, hidden heading-marker rendering, carousel proportions,
-visible-window rendering, smaller paper visibility, five-preview visibility,
-small focused-paper gap, balanced focused-paper adjacent spacing,
-selected-paper scale emphasis, small-scroll snap resistance, and click-to-focus
-selection.
+formatting continuation, combined list and inline-format continuation,
+collapsed inline shortcut exit behavior, slash-command heading and bullet
+transformations, list continuation, Tab list-marker indentation, nested-list
+Enter dedent, list continuation ending after empty marker deletion, hidden
+heading-marker rendering, carousel proportions, visible-window rendering,
+smaller paper visibility, five-preview visibility, small focused-paper gap,
+balanced focused-paper adjacent spacing, selected-paper scale emphasis,
+small-scroll snap resistance, and click-to-focus selection.
 
 ## Known Gaps and Limitations
 

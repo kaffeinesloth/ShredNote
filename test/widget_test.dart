@@ -216,7 +216,7 @@ void main() {
     await tester.pump();
 
     final editor = tester.widget<TextField>(editorFinder);
-    expect(editor.controller!.text, '*Fast* phrase');
+    expect(editor.controller!.text, '_Fast_ phrase');
   });
 
   testWidgets('command u underlines selected editor text', (
@@ -259,7 +259,7 @@ void main() {
     await tester.pump();
 
     final context = tester.element(find.byType(ShredNoteApp));
-    final controller = PaperEditingController(text: '*Fast* <u>Held</u>');
+    final controller = PaperEditingController(text: '_Fast_ <u>Held</u>');
     addTearDown(controller.dispose);
 
     final span = controller.buildTextSpan(
@@ -271,7 +271,7 @@ void main() {
         .where(
           (child) =>
               child is TextSpan &&
-              child.text == '*' &&
+              child.text == '_' &&
               child.style?.color == Colors.transparent,
         )
         .length;
@@ -300,10 +300,10 @@ void main() {
     expect(hiddenUnderlineMarkerSpans, 2);
     expect(italicTextSpans.length, 1);
     expect(underlineTextSpans.length, 1);
-    expect(span.toPlainText(), '*Fast* <u>Held</u>');
+    expect(span.toPlainText(), '_Fast_ <u>Held</u>');
   });
 
-  testWidgets('enter exits active inline styles before the new line', (
+  testWidgets('enter keeps active inline styles on the next line', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(const ShredNoteApp());
@@ -319,9 +319,17 @@ void main() {
     await tester.pump();
 
     final cases = [
-      (brokenText: '**Heavy\n** riff', fixedText: '**Heavy**\n riff'),
-      (brokenText: '*Fast\n* phrase', fixedText: '*Fast*\n phrase'),
-      (brokenText: '<u>Held\n</u> chord', fixedText: '<u>Held</u>\n chord'),
+      (
+        brokenText: '**Heavy\n**',
+        fixedText: '**Heavy**\n****',
+        cursorOffset: 12,
+      ),
+      (brokenText: '_Fast\n_', fixedText: '_Fast_\n__', cursorOffset: 8),
+      (
+        brokenText: '<u>Held\n</u>',
+        fixedText: '<u>Held</u>\n<u></u>',
+        cursorOffset: 15,
+      ),
     ];
 
     for (final testCase in cases) {
@@ -337,6 +345,58 @@ void main() {
 
       final editor = tester.widget<TextField>(editorFinder);
       expect(editor.controller!.text, testCase.fixedText);
+      expect(editor.controller!.selection.extentOffset, testCase.cursorOffset);
+    }
+  });
+
+  testWidgets('enter keeps active inline styles inside list items', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final editorFinder = find.byKey(const ValueKey('editor-paper-1'));
+    await tester.tap(editorFinder);
+    await tester.pump();
+
+    final cases = [
+      (
+        brokenText: '- **Heavy\n**',
+        fixedText: '- **Heavy**\n- ****',
+        cursorOffset: 16,
+      ),
+      (brokenText: '- _Fast\n_', fixedText: '- _Fast_\n- __', cursorOffset: 12),
+      (
+        brokenText: '- <u>Held\n</u>',
+        fixedText: '- <u>Held</u>\n- <u></u>',
+        cursorOffset: 19,
+      ),
+      (
+        brokenText: '  + **Heavy\n**',
+        fixedText: '  + **Heavy**\n  + ****',
+        cursorOffset: 20,
+      ),
+    ];
+
+    for (final testCase in cases) {
+      tester.testTextInput.updateEditingValue(
+        TextEditingValue(
+          text: testCase.brokenText,
+          selection: TextSelection.collapsed(
+            offset: testCase.brokenText.indexOf('\n') + 1,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final editor = tester.widget<TextField>(editorFinder);
+      expect(editor.controller!.text, testCase.fixedText);
+      expect(editor.controller!.selection.extentOffset, testCase.cursorOffset);
     }
   });
 
@@ -365,10 +425,10 @@ void main() {
       ),
       (
         key: LogicalKeyboardKey.keyI,
-        activeText: '*Fast*',
+        activeText: '_Fast_',
         activeCursor: 5,
         exitCursor: 6,
-        normalText: '*Fast* phrase',
+        normalText: '_Fast_ phrase',
       ),
       (
         key: LogicalKeyboardKey.keyU,
@@ -512,6 +572,197 @@ void main() {
 
     final editor = tester.widget<TextField>(editorFinder);
     expect(editor.controller!.text, '- ');
+  });
+
+  testWidgets('enter continues list markers on the next line', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final editorFinder = find.byKey(const ValueKey('editor-paper-1'));
+    await tester.tap(editorFinder);
+    await tester.pump();
+
+    final cases = [
+      (
+        baseText: '- first',
+        typedText: '- first\n',
+        expectedText: '- first\n- ',
+      ),
+      (
+        baseText: '+ first',
+        typedText: '+ first\n',
+        expectedText: '+ first\n+ ',
+      ),
+      (
+        baseText: '  + nested',
+        typedText: '  + nested\n',
+        expectedText: '  + nested\n  + ',
+      ),
+    ];
+
+    for (final testCase in cases) {
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '',
+          selection: TextSelection.collapsed(offset: 0),
+        ),
+      );
+      await tester.pump();
+
+      tester.testTextInput.updateEditingValue(
+        TextEditingValue(
+          text: testCase.baseText,
+          selection: TextSelection.collapsed(offset: testCase.baseText.length),
+        ),
+      );
+      await tester.pump();
+
+      tester.testTextInput.updateEditingValue(
+        TextEditingValue(
+          text: testCase.typedText,
+          selection: TextSelection.collapsed(offset: testCase.typedText.length),
+        ),
+      );
+      await tester.pump();
+
+      final editor = tester.widget<TextField>(editorFinder);
+      expect(editor.controller!.text, testCase.expectedText);
+      expect(
+        editor.controller!.selection.extentOffset,
+        testCase.expectedText.length,
+      );
+    }
+  });
+
+  testWidgets('tab indents current dash list marker to nested plus marker', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final editorFinder = find.byKey(const ValueKey('editor-paper-1'));
+    await tester.tap(editorFinder);
+    await tester.pump();
+
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: '- first',
+        selection: TextSelection.collapsed(offset: 7),
+      ),
+    );
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+
+    var editor = tester.widget<TextField>(editorFinder);
+    expect(editor.controller!.text, '  + first');
+    expect(editor.controller!.selection.extentOffset, 9);
+
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: '  + first\n',
+        selection: TextSelection.collapsed(offset: 10),
+      ),
+    );
+    await tester.pump();
+
+    editor = tester.widget<TextField>(editorFinder);
+    expect(editor.controller!.text, '  + first\n  + ');
+  });
+
+  testWidgets('removing an empty list marker ends list continuation', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final editorFinder = find.byKey(const ValueKey('editor-paper-1'));
+    await tester.tap(editorFinder);
+    await tester.pump();
+
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: '+ first',
+        selection: TextSelection.collapsed(offset: 7),
+      ),
+    );
+    await tester.pump();
+
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: '+ first\n',
+        selection: TextSelection.collapsed(offset: 8),
+      ),
+    );
+    await tester.pump();
+
+    var editor = tester.widget<TextField>(editorFinder);
+    expect(editor.controller!.text, '+ first\n+ ');
+
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: '+ first\n',
+        selection: TextSelection.collapsed(offset: 8),
+      ),
+    );
+    await tester.pump();
+
+    editor = tester.widget<TextField>(editorFinder);
+    expect(editor.controller!.text, '+ first\n');
+  });
+
+  testWidgets('enter on empty nested list marker returns to outer marker', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final editorFinder = find.byKey(const ValueKey('editor-paper-1'));
+    await tester.tap(editorFinder);
+    await tester.pump();
+
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: '- outer\n  + nested\n  + ',
+        selection: TextSelection.collapsed(offset: 23),
+      ),
+    );
+    await tester.pump();
+
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: '- outer\n  + nested\n  + \n',
+        selection: TextSelection.collapsed(offset: 24),
+      ),
+    );
+    await tester.pump();
+
+    final editor = tester.widget<TextField>(editorFinder);
+    expect(editor.controller!.text, '- outer\n  + nested\n- ');
+    expect(editor.controller!.selection.extentOffset, 21);
   });
 
   testWidgets('paper previews keep an A4-like vertical proportion', (
