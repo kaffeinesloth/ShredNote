@@ -118,6 +118,402 @@ void main() {
     expect(find.text('Second paper content'), findsOneWidget);
   });
 
+  testWidgets('command b bolds selected editor text', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final editorFinder = find.byKey(const ValueKey('editor-paper-1'));
+    await tester.tap(editorFinder);
+    await tester.enterText(editorFinder, 'Heavy riff');
+    await tester.pump();
+
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: 'Heavy riff',
+        selection: TextSelection(baseOffset: 0, extentOffset: 5),
+      ),
+    );
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final editor = tester.widget<TextField>(editorFinder);
+    expect(editor.controller!.text, '**Heavy** riff');
+  });
+
+  testWidgets('bold markdown markers are hidden in styled editor text', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    final context = tester.element(find.byType(ShredNoteApp));
+    final controller = PaperEditingController(text: '**Heavy** riff');
+    addTearDown(controller.dispose);
+
+    final span = controller.buildTextSpan(
+      context: context,
+      style: const TextStyle(fontSize: 18),
+      withComposing: false,
+    );
+    final hiddenBoldMarkerSpans = span.children!
+        .where(
+          (child) =>
+              child is TextSpan &&
+              child.text == '**' &&
+              child.style?.color == Colors.transparent,
+        )
+        .length;
+    final boldTextSpans = span.children!.where(
+      (child) =>
+          child is TextSpan &&
+          child.text == 'Heavy' &&
+          child.style?.fontWeight == FontWeight.w800,
+    );
+
+    expect(hiddenBoldMarkerSpans, 2);
+    expect(boldTextSpans.length, 1);
+    expect(span.toPlainText(), '**Heavy** riff');
+  });
+
+  testWidgets('command i italicizes selected editor text', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final editorFinder = find.byKey(const ValueKey('editor-paper-1'));
+    await tester.tap(editorFinder);
+    await tester.enterText(editorFinder, 'Fast phrase');
+    await tester.pump();
+
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: 'Fast phrase',
+        selection: TextSelection(baseOffset: 0, extentOffset: 4),
+      ),
+    );
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyI);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final editor = tester.widget<TextField>(editorFinder);
+    expect(editor.controller!.text, '*Fast* phrase');
+  });
+
+  testWidgets('command u underlines selected editor text', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final editorFinder = find.byKey(const ValueKey('editor-paper-1'));
+    await tester.tap(editorFinder);
+    await tester.enterText(editorFinder, 'Held chord');
+    await tester.pump();
+
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: 'Held chord',
+        selection: TextSelection(baseOffset: 0, extentOffset: 4),
+      ),
+    );
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyU);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final editor = tester.widget<TextField>(editorFinder);
+    expect(editor.controller!.text, '<u>Held</u> chord');
+  });
+
+  testWidgets('italic and underline markers are hidden in styled editor text', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    final context = tester.element(find.byType(ShredNoteApp));
+    final controller = PaperEditingController(text: '*Fast* <u>Held</u>');
+    addTearDown(controller.dispose);
+
+    final span = controller.buildTextSpan(
+      context: context,
+      style: const TextStyle(fontSize: 18),
+      withComposing: false,
+    );
+    final hiddenItalicMarkerSpans = span.children!
+        .where(
+          (child) =>
+              child is TextSpan &&
+              child.text == '*' &&
+              child.style?.color == Colors.transparent,
+        )
+        .length;
+    final hiddenUnderlineMarkerSpans = span.children!
+        .where(
+          (child) =>
+              child is TextSpan &&
+              (child.text == '<u>' || child.text == '</u>') &&
+              child.style?.color == Colors.transparent,
+        )
+        .length;
+    final italicTextSpans = span.children!.where(
+      (child) =>
+          child is TextSpan &&
+          child.text == 'Fast' &&
+          child.style?.fontStyle == FontStyle.italic,
+    );
+    final underlineTextSpans = span.children!.where(
+      (child) =>
+          child is TextSpan &&
+          child.text == 'Held' &&
+          child.style?.decoration == TextDecoration.underline,
+    );
+
+    expect(hiddenItalicMarkerSpans, 2);
+    expect(hiddenUnderlineMarkerSpans, 2);
+    expect(italicTextSpans.length, 1);
+    expect(underlineTextSpans.length, 1);
+    expect(span.toPlainText(), '*Fast* <u>Held</u>');
+  });
+
+  testWidgets('enter exits active inline styles before the new line', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final editorFinder = find.byKey(const ValueKey('editor-paper-1'));
+    await tester.tap(editorFinder);
+    await tester.pump();
+
+    final cases = [
+      (brokenText: '**Heavy\n** riff', fixedText: '**Heavy**\n riff'),
+      (brokenText: '*Fast\n* phrase', fixedText: '*Fast*\n phrase'),
+      (brokenText: '<u>Held\n</u> chord', fixedText: '<u>Held</u>\n chord'),
+    ];
+
+    for (final testCase in cases) {
+      tester.testTextInput.updateEditingValue(
+        TextEditingValue(
+          text: testCase.brokenText,
+          selection: TextSelection.collapsed(
+            offset: testCase.brokenText.indexOf('\n') + 1,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final editor = tester.widget<TextField>(editorFinder);
+      expect(editor.controller!.text, testCase.fixedText);
+    }
+  });
+
+  testWidgets('collapsed inline shortcuts can exit before normal typing', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final editorFinder = find.byKey(const ValueKey('editor-paper-1'));
+    await tester.tap(editorFinder);
+    await tester.pump();
+
+    final cases = [
+      (
+        key: LogicalKeyboardKey.keyB,
+        activeText: '**Heavy**',
+        activeCursor: 7,
+        exitCursor: 9,
+        normalText: '**Heavy** riff',
+      ),
+      (
+        key: LogicalKeyboardKey.keyI,
+        activeText: '*Fast*',
+        activeCursor: 5,
+        exitCursor: 6,
+        normalText: '*Fast* phrase',
+      ),
+      (
+        key: LogicalKeyboardKey.keyU,
+        activeText: '<u>Held</u>',
+        activeCursor: 7,
+        exitCursor: 11,
+        normalText: '<u>Held</u> chord',
+      ),
+    ];
+
+    for (final testCase in cases) {
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '',
+          selection: TextSelection.collapsed(offset: 0),
+        ),
+      );
+      await tester.pump();
+
+      tester.testTextInput.updateEditingValue(
+        TextEditingValue(
+          text: testCase.activeText,
+          selection: TextSelection.collapsed(offset: testCase.activeCursor),
+        ),
+      );
+      await tester.pump();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(testCase.key);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pump();
+
+      var editor = tester.widget<TextField>(editorFinder);
+      expect(editor.controller!.selection.extentOffset, testCase.exitCursor);
+
+      tester.testTextInput.updateEditingValue(
+        TextEditingValue(
+          text: testCase.normalText,
+          selection: TextSelection.collapsed(
+            offset: testCase.normalText.length,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      editor = tester.widget<TextField>(editorFinder);
+      expect(editor.controller!.text, testCase.normalText);
+    }
+  });
+
+  testWidgets('slash h command creates a heading line', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final editorFinder = find.byKey(const ValueKey('editor-paper-1'));
+    await tester.enterText(editorFinder, '/h\n');
+    await tester.pump();
+
+    final editor = tester.widget<TextField>(editorFinder);
+    expect(editor.controller!.text, '# ');
+  });
+
+  testWidgets('slash hh and hhh commands create smaller heading lines', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final editorFinder = find.byKey(const ValueKey('editor-paper-1'));
+    await tester.enterText(editorFinder, '/hh\n');
+    await tester.pump();
+
+    var editor = tester.widget<TextField>(editorFinder);
+    expect(editor.controller!.text, '## ');
+
+    await tester.enterText(editorFinder, '/hhh\n');
+    await tester.pump();
+
+    editor = tester.widget<TextField>(editorFinder);
+    expect(editor.controller!.text, '### ');
+  });
+
+  testWidgets('heading markdown markers are hidden in styled editor text', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    final context = tester.element(find.byType(ShredNoteApp));
+    final controller = PaperEditingController(
+      text: '# Main\n## Mid\n### Small',
+    );
+    addTearDown(controller.dispose);
+
+    final span = controller.buildTextSpan(
+      context: context,
+      style: const TextStyle(fontSize: 18),
+      withComposing: false,
+    );
+    final hiddenMarkerSpans = span.children!
+        .where(
+          (child) =>
+              child is TextSpan &&
+              (child.text == '# ' ||
+                  child.text == '## ' ||
+                  child.text == '### ') &&
+              child.style?.color == Colors.transparent,
+        )
+        .length;
+
+    expect(hiddenMarkerSpans, 3);
+    expect(span.toPlainText(), '# Main\n## Mid\n### Small');
+  });
+
+  testWidgets('slash l command creates a bullet line', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const ShredNoteApp());
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final editorFinder = find.byKey(const ValueKey('editor-paper-1'));
+    await tester.enterText(editorFinder, '/l\n');
+    await tester.pump();
+
+    final editor = tester.widget<TextField>(editorFinder);
+    expect(editor.controller!.text, '- ');
+  });
+
   testWidgets('paper previews keep an A4-like vertical proportion', (
     WidgetTester tester,
   ) async {

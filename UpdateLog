@@ -39,15 +39,29 @@ scaffolding. Product behavior is concentrated in the Dart files under `lib/`.
 
 ## Current Progress Stage
 
-The current program progress stage is refinement of the paper carousel
-interaction feel on macOS. The latest working-tree changes remove the separate
-snap haptic path and make scroll haptics fire only when movement crosses a
-paper's main-area threshold. The native macOS handler now responds only to
-`paperScroll`, using a two-part `levelChange` then `generic` feedback sequence
-to make threshold changes more noticeable.
+The current program progress stage is lightweight selected-paper editing
+commands. The latest working-tree changes add markdown-style body editing:
+`Command+B` wraps selected text in bold markers or inserts an empty bold pair,
+`Command+I` wraps selected text in italic markers, `Command+U` wraps selected
+text in markdown-friendly underline HTML, typing `/h`, `/hh`, or `/hhh` then
+Enter creates progressively smaller heading lines, and typing `/l` then Enter
+creates a bullet line. Heading, bold, italic, and underline markdown markers
+are hidden in the editor display while remaining in stored content.
+Pressing Enter at the visible end of styled inline text now moves the closing
+bold, italic, or underline marker before the newline, so the next line starts
+outside the style.
+Pressing the active inline shortcut again while the cursor is before its hidden
+closing marker now moves the cursor after that marker, allowing normal typing to
+continue on the same line without corrupting the stored markdown syntax.
 
-No persistence, sidebar controls, deletion/reordering, or rich editor behavior
-has been added in this stage.
+The working tree also contains the previous macOS haptics refinement: the
+separate snap haptic path was removed, scroll haptics now fire only when
+movement crosses a paper's main-area threshold, and the native macOS handler
+responds only to `paperScroll` with a two-part `levelChange` then `generic`
+feedback sequence.
+
+No persistence, sidebar controls, deletion/reordering, or full rich document
+canvas behavior has been added in this stage.
 
 ## Technology Stack
 
@@ -90,6 +104,8 @@ or asset pipeline is currently configured.
     channel.
   - Implements selected-paper title renaming and body editing in the main
     workspace.
+  - Implements lightweight markdown-style editor commands and styled text
+    rendering through `PaperEditingController`.
 
 - `macos/Runner/MainFlutterWindow.swift`
   - Registers the `shred_note/haptics` method channel.
@@ -103,6 +119,18 @@ or asset pipeline is currently configured.
     - Command+N paper creation.
     - Paper renaming updating the sidebar preview.
     - Independent editor content per paper.
+    - Command+B bold marker insertion around selected editor text.
+    - Hidden bold-marker rendering while preserving markdown text.
+    - Command+I italic marker insertion around selected editor text.
+    - Command+U underline tag insertion around selected editor text.
+    - Hidden italic/underline marker rendering while preserving markdown text.
+    - Enter normalization that exits bold, italic, and underline spans before
+      the next line.
+    - Collapsed cursor shortcut exit behavior for returning to normal typing
+      after bold, italic, or underline insertion.
+    - `/h`, `/hh`, and `/hhh` + Enter heading command transformations.
+    - Hidden heading-marker rendering while preserving markdown text.
+    - `/l` + Enter bullet-list command transformation.
     - A4-like paper preview proportions.
     - Nearby-window carousel rendering.
     - Smaller paper sizing exposing more nearby previews.
@@ -141,15 +169,31 @@ The screen is split into two columns:
   - Light background: `0xFFF1E9DD`
   - Shows an empty prompt until a paper is created.
   - Shows editable selected-paper title and body text after a paper exists.
-  - No toolbar, formatting model, rich document canvas, or persistence yet.
+  - Supports lightweight markdown-style body commands, but no toolbar, full
+    rich document canvas, or persistence yet.
 
-### Keyboard Shortcut
+### Keyboard Shortcuts
 
-`WorkspaceScreen` registers a Flutter `Shortcuts` and `Actions` pair:
+`WorkspaceScreen` registers Flutter `Shortcuts` and `Actions`:
 
 - Shortcut: `Meta/Cmd + N`
-- Intent: `AddPaperIntent`
-- Action: creates a new paper item.
+  - Intent: `AddPaperIntent`
+  - Action: creates a new paper item.
+- Shortcut: `Meta/Cmd + B`
+  - Intent: `ToggleBoldIntent`
+  - Action: wraps the current editor selection in `**` markers, removes
+    existing adjacent bold markers, or inserts an empty `****` pair when the
+    cursor is collapsed.
+- Shortcut: `Meta/Cmd + I`
+  - Intent: `ToggleItalicIntent`
+  - Action: wraps the current editor selection in `*` markers, removes existing
+    adjacent italic markers, or inserts an empty `**` pair when the cursor is
+    collapsed.
+- Shortcut: `Meta/Cmd + U`
+  - Intent: `ToggleUnderlineIntent`
+  - Action: wraps the current editor selection in `<u>` and `</u>` tags,
+    removes existing adjacent underline tags, or inserts an empty `<u></u>` pair
+    when the cursor is collapsed.
 
 The screen owns a `FocusNode` named `WorkspaceShortcuts`. It requests focus
 after the first frame and again when the screen is tapped, so the keyboard
@@ -195,8 +239,8 @@ no persistence layer yet.
 
 ### Main Workspace Editor
 
-The main workspace now contains a basic plain-text editor for the selected
-paper.
+The main workspace now contains a basic markdown-style text editor for the
+selected paper.
 
 Behavior:
 
@@ -206,13 +250,38 @@ Behavior:
 - Typing in the title field renames the selected paper and updates the sidebar
   preview immediately.
 - Typing in the editor updates the selected paper's `content` field.
+- `Command+B` in the body editor toggles `**bold**` markers for selected text.
+- With no selection, `Command+B` inserts `****` and places the cursor between
+  the markers.
+- `Command+I` in the body editor toggles `*italic*` markers for selected text.
+- With no selection, `Command+I` inserts `**` and places the cursor between the
+  markers.
+- `Command+U` in the body editor toggles `<u>underline</u>` tags for selected
+  text.
+- With no selection, `Command+U` inserts `<u></u>` and places the cursor between
+  the tags.
+- Typing `/h` and pressing Enter replaces that command line with `# `.
+- Typing `/hh` and pressing Enter replaces that command line with `## `.
+- Typing `/hhh` and pressing Enter replaces that command line with `### `.
+- Typing `/l` and pressing Enter replaces that command line with `- `.
+- Body text is rendered through `PaperEditingController`, which visually styles
+  heading lines, bold spans, italic spans, and underlined spans while keeping
+  the stored content markdown-like. Leading heading markers, paired inline
+  markers, and underline tags are hidden in the editor view, so users see styled
+  text instead of markdown syntax.
+- Pressing Enter at the visible end of a bold, italic, or underlined span
+  normalizes the stored text from forms like `**text\n**` to `**text**\n`, so
+  inline formatting does not leak onto the next line or reveal closing markers.
+- Pressing the same inline shortcut again while the cursor is before a hidden
+  closing marker moves the cursor after that marker. This lets users type bold,
+  italic, or underlined text and then continue normal text on the same line.
 - Switching to another paper syncs the editor to that paper's saved in-memory
   title and content.
 - Switching back to a previous paper restores that paper's own content.
 
-The editor is intentionally basic. It uses plain `TextField` controls with no
-formatting, blocks, markdown preview, attachments, persistence, undo model, or
-file backing.
+The editor is intentionally basic. It still uses `TextField` controls and does
+not have blocks, markdown preview mode, attachments, persistence, a custom undo
+model, or file backing.
 
 ### Paper Carousel UI
 
@@ -298,9 +367,9 @@ Approximate line counts at time of this log:
 
 - `lib/main.dart`: 7 lines
 - `lib/app.dart`: 24 lines
-- `lib/screens/workspace_screen.dart`: 816 lines
+- `lib/screens/workspace_screen.dart`: 1355 lines
 - `macos/Runner/MainFlutterWindow.swift`: 35 lines
-- `test/widget_test.dart`: 325 lines
+- `test/widget_test.dart`: 721 lines
 - `pubspec.yaml`: 89 lines
 - `analysis_options.yaml`: 28 lines
 
@@ -342,16 +411,21 @@ Built build/macos/Build/Products/Release/shred_note.app
 ```
 
 Current widget tests cover the basic app shell, keyboard paper creation,
-paper renaming, independent editor content per paper, carousel proportions,
+paper renaming, independent editor content per paper, Command+B bold markers,
+hidden bold-marker rendering, Command+I italic markers, Command+U underline
+tags, hidden italic/underline marker rendering, Enter normalization for inline
+formatting, collapsed inline shortcut exit behavior, slash-command heading and
+bullet transformations, hidden heading-marker rendering, carousel proportions,
 visible-window rendering, smaller paper visibility, five-preview visibility,
-small focused-paper gap, balanced focused-paper adjacent spacing, selected-paper
-scale emphasis, small-scroll snap resistance, and click-to-focus selection.
+small focused-paper gap, balanced focused-paper adjacent spacing,
+selected-paper scale emphasis, small-scroll snap resistance, and click-to-focus
+selection.
 
 ## Known Gaps and Limitations
 
 - README is still the default Flutter README and does not describe ShredNote.
 - No persistent storage for papers.
-- Main workspace editor is plain text only and still early.
+- Main workspace editor is markdown-style and still early.
 - No rich note/document canvas in the main workspace.
 - Paper content exists only in memory.
 - Paper IDs are stable only within the current app run.

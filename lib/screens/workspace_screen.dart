@@ -17,10 +17,11 @@ class WorkspaceScreen extends StatefulWidget {
 class _WorkspaceScreenState extends State<WorkspaceScreen> {
   final List<PaperStackItem> _papers = [];
   final TextEditingController _titleController = TextEditingController();
-  final TextEditingController _editorController = TextEditingController();
+  final PaperEditingController _editorController = PaperEditingController();
   final FocusNode _shortcutFocusNode = FocusNode(
     debugLabel: 'WorkspaceShortcuts',
   );
+  final FocusNode _editorFocusNode = FocusNode(debugLabel: 'PaperBodyEditor');
   int _nextPaperSequence = 1;
 
   @override
@@ -38,6 +39,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     _titleController.dispose();
     _editorController.dispose();
     _shortcutFocusNode.dispose();
+    _editorFocusNode.dispose();
     super.dispose();
   }
 
@@ -99,6 +101,186 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     });
   }
 
+  void _handleEditorContentChanged(String content) {
+    final inlineExitResult = _inlineStyleExitOnEnterReplacement();
+
+    if (inlineExitResult != null) {
+      _editorController.value = inlineExitResult;
+      _updateSelectedPaperContent(inlineExitResult.text);
+      return;
+    }
+
+    final commandResult = _completedLineCommandReplacement();
+
+    if (commandResult != null) {
+      _editorController.value = commandResult;
+      _updateSelectedPaperContent(commandResult.text);
+      return;
+    }
+
+    _updateSelectedPaperContent(content);
+  }
+
+  TextEditingValue? _completedLineCommandReplacement() {
+    final value = _editorController.value;
+    final text = value.text;
+    final selectionOffset = value.selection.extentOffset;
+
+    if (selectionOffset <= 0 ||
+        selectionOffset > text.length ||
+        text.codeUnitAt(selectionOffset - 1) != 10) {
+      return null;
+    }
+
+    final commandEnd = selectionOffset - 1;
+    final lineStart = text.lastIndexOf('\n', max(0, commandEnd - 1)) + 1;
+    final command = text.substring(lineStart, commandEnd).trim();
+    final replacement = switch (command) {
+      '/h' => '# ',
+      '/hh' => '## ',
+      '/hhh' => '### ',
+      '/l' => '- ',
+      _ => null,
+    };
+
+    if (replacement == null) {
+      return null;
+    }
+
+    final updatedText = text.replaceRange(
+      lineStart,
+      selectionOffset,
+      replacement,
+    );
+    final updatedOffset = lineStart + replacement.length;
+
+    return TextEditingValue(
+      text: updatedText,
+      selection: TextSelection.collapsed(offset: updatedOffset),
+    );
+  }
+
+  TextEditingValue? _inlineStyleExitOnEnterReplacement() {
+    final value = _editorController.value;
+    final text = value.text;
+    final selectionOffset = value.selection.extentOffset;
+
+    if (selectionOffset <= 0 ||
+        selectionOffset > text.length ||
+        text.codeUnitAt(selectionOffset - 1) != 10) {
+      return null;
+    }
+
+    final styles = [
+      (openingMarker: '<u>', closingMarker: '</u>', skipDoubleAsterisks: false),
+      (openingMarker: '**', closingMarker: '**', skipDoubleAsterisks: false),
+      (openingMarker: '*', closingMarker: '*', skipDoubleAsterisks: true),
+    ];
+
+    for (final style in styles) {
+      if (!text.startsWith(style.closingMarker, selectionOffset)) {
+        continue;
+      }
+
+      final beforeNewline = text.substring(0, selectionOffset - 1);
+      final hasOpenStyle = _hasUnclosedInlineMarkerBeforeCursor(
+        beforeNewline,
+        openingMarker: style.openingMarker,
+        closingMarker: style.closingMarker,
+        skipDoubleAsterisks: style.skipDoubleAsterisks,
+      );
+
+      if (!hasOpenStyle) {
+        continue;
+      }
+
+      final replacement = '${style.closingMarker}\n';
+      final updatedText = text.replaceRange(
+        selectionOffset - 1,
+        selectionOffset + style.closingMarker.length,
+        replacement,
+      );
+      final updatedOffset = selectionOffset - 1 + replacement.length;
+
+      return TextEditingValue(
+        text: updatedText,
+        selection: TextSelection.collapsed(offset: updatedOffset),
+      );
+    }
+
+    return null;
+  }
+
+  bool _hasUnclosedInlineMarkerBeforeCursor(
+    String text, {
+    required String openingMarker,
+    required String closingMarker,
+    required bool skipDoubleAsterisks,
+  }) {
+    var cursor = 0;
+    var isOpen = false;
+
+    while (cursor < text.length) {
+      final openingIndex = _nextMarkerIndex(
+        text,
+        openingMarker,
+        cursor,
+        skipDoubleAsterisks: skipDoubleAsterisks,
+      );
+      final closingIndex = _nextMarkerIndex(
+        text,
+        closingMarker,
+        cursor,
+        skipDoubleAsterisks: skipDoubleAsterisks,
+      );
+
+      if (openingIndex == -1 && closingIndex == -1) {
+        return isOpen;
+      }
+
+      if (openingIndex != -1 &&
+          (closingIndex == -1 || openingIndex <= closingIndex)) {
+        isOpen = !isOpen;
+        cursor = openingIndex + openingMarker.length;
+      } else {
+        isOpen = !isOpen;
+        cursor = closingIndex + closingMarker.length;
+      }
+    }
+
+    return isOpen;
+  }
+
+  int _nextMarkerIndex(
+    String text,
+    String marker,
+    int start, {
+    required bool skipDoubleAsterisks,
+  }) {
+    var markerIndex = start;
+
+    while (markerIndex < text.length) {
+      markerIndex = text.indexOf(marker, markerIndex);
+      if (markerIndex == -1) {
+        return -1;
+      }
+
+      if (!skipDoubleAsterisks || !_isPartOfDoubleAsterisk(text, markerIndex)) {
+        return markerIndex;
+      }
+
+      markerIndex += marker.length;
+    }
+
+    return -1;
+  }
+
+  bool _isPartOfDoubleAsterisk(String text, int index) {
+    return text[index] == '*' &&
+        ((index > 0 && text[index - 1] == '*') ||
+            (index + 1 < text.length && text[index + 1] == '*'));
+  }
+
   void _updateSelectedPaperTitle(String title) {
     final selectedIndex = _selectedPaperIndex;
     if (selectedIndex == -1) {
@@ -134,18 +316,133 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
+  void _toggleSelectedPaperBold() {
+    _toggleSelectedPaperInlineStyle(openingMarker: '**', closingMarker: '**');
+  }
+
+  void _toggleSelectedPaperItalic() {
+    _toggleSelectedPaperInlineStyle(openingMarker: '*', closingMarker: '*');
+  }
+
+  void _toggleSelectedPaperUnderline() {
+    _toggleSelectedPaperInlineStyle(
+      openingMarker: '<u>',
+      closingMarker: '</u>',
+    );
+  }
+
+  void _toggleSelectedPaperInlineStyle({
+    required String openingMarker,
+    required String closingMarker,
+  }) {
+    if (_selectedPaperIndex == -1 || !_editorFocusNode.hasFocus) {
+      return;
+    }
+
+    final value = _editorController.value;
+    final selection = value.selection;
+    if (!selection.isValid) {
+      return;
+    }
+
+    final text = value.text;
+    final start = min(selection.start, selection.end);
+    final end = max(selection.start, selection.end);
+    late final String updatedText;
+    late final TextSelection updatedSelection;
+
+    if (selection.isCollapsed) {
+      if (text.startsWith(closingMarker, start) &&
+          _hasUnclosedInlineMarkerBeforeCursor(
+            text.substring(0, start),
+            openingMarker: openingMarker,
+            closingMarker: closingMarker,
+            skipDoubleAsterisks: openingMarker == '*',
+          )) {
+        updatedText = text;
+        updatedSelection = TextSelection.collapsed(
+          offset: start + closingMarker.length,
+        );
+      } else {
+        updatedText = text.replaceRange(
+          start,
+          start,
+          '$openingMarker$closingMarker',
+        );
+        updatedSelection = TextSelection.collapsed(
+          offset: start + openingMarker.length,
+        );
+      }
+    } else {
+      final hasStyleMarkers =
+          start >= openingMarker.length &&
+          end + closingMarker.length <= text.length &&
+          text.substring(start - openingMarker.length, start) ==
+              openingMarker &&
+          text.substring(end, end + closingMarker.length) == closingMarker;
+
+      if (hasStyleMarkers) {
+        updatedText = text
+            .replaceRange(end, end + closingMarker.length, '')
+            .replaceRange(start - openingMarker.length, start, '');
+        updatedSelection = TextSelection(
+          baseOffset: start - openingMarker.length,
+          extentOffset: end - openingMarker.length,
+        );
+      } else {
+        updatedText = text
+            .replaceRange(end, end, closingMarker)
+            .replaceRange(start, start, openingMarker);
+        updatedSelection = TextSelection(
+          baseOffset: start + openingMarker.length,
+          extentOffset: end + openingMarker.length,
+        );
+      }
+    }
+
+    _editorController.value = TextEditingValue(
+      text: updatedText,
+      selection: updatedSelection,
+    );
+    _updateSelectedPaperContent(updatedText);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Shortcuts(
       shortcuts: <ShortcutActivator, Intent>{
         const SingleActivator(LogicalKeyboardKey.keyN, meta: true):
             const AddPaperIntent(),
+        const SingleActivator(LogicalKeyboardKey.keyB, meta: true):
+            const ToggleBoldIntent(),
+        const SingleActivator(LogicalKeyboardKey.keyI, meta: true):
+            const ToggleItalicIntent(),
+        const SingleActivator(LogicalKeyboardKey.keyU, meta: true):
+            const ToggleUnderlineIntent(),
       },
       child: Actions(
         actions: <Type, Action<Intent>>{
           AddPaperIntent: CallbackAction<AddPaperIntent>(
             onInvoke: (intent) {
               _addPaper();
+              return null;
+            },
+          ),
+          ToggleBoldIntent: CallbackAction<ToggleBoldIntent>(
+            onInvoke: (intent) {
+              _toggleSelectedPaperBold();
+              return null;
+            },
+          ),
+          ToggleItalicIntent: CallbackAction<ToggleItalicIntent>(
+            onInvoke: (intent) {
+              _toggleSelectedPaperItalic();
+              return null;
+            },
+          ),
+          ToggleUnderlineIntent: CallbackAction<ToggleUnderlineIntent>(
+            onInvoke: (intent) {
+              _toggleSelectedPaperUnderline();
               return null;
             },
           ),
@@ -181,8 +478,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                         paper: _selectedPaper,
                         titleController: _titleController,
                         controller: _editorController,
+                        editorFocusNode: _editorFocusNode,
                         onTitleChanged: _updateSelectedPaperTitle,
-                        onContentChanged: _updateSelectedPaperContent,
+                        onContentChanged: _handleEditorContentChanged,
                       ),
                     ),
                   ),
@@ -198,6 +496,244 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
 class AddPaperIntent extends Intent {
   const AddPaperIntent();
+}
+
+class ToggleBoldIntent extends Intent {
+  const ToggleBoldIntent();
+}
+
+class ToggleItalicIntent extends Intent {
+  const ToggleItalicIntent();
+}
+
+class ToggleUnderlineIntent extends Intent {
+  const ToggleUnderlineIntent();
+}
+
+class PaperEditingController extends TextEditingController {
+  PaperEditingController({super.text});
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    final defaultStyle = style ?? const TextStyle();
+
+    return TextSpan(
+      style: defaultStyle,
+      children: _styledLines(text, defaultStyle),
+    );
+  }
+
+  List<TextSpan> _styledLines(String source, TextStyle defaultStyle) {
+    final spans = <TextSpan>[];
+    final lines = source.split('\n');
+
+    for (var index = 0; index < lines.length; index += 1) {
+      final line = lines[index];
+      final heading = _headingForLine(line);
+      final lineStyle = heading == null
+          ? defaultStyle
+          : defaultStyle.copyWith(
+              fontSize: heading.fontSize,
+              fontWeight: FontWeight.w800,
+            );
+
+      if (heading != null) {
+        spans.add(
+          _hiddenMarkdownMarker(
+            line.substring(0, heading.markerLength),
+            lineStyle,
+          ),
+        );
+      }
+
+      spans.addAll(
+        _styledInlineSegments(
+          line.substring(heading?.markerLength ?? 0),
+          lineStyle,
+        ),
+      );
+
+      if (index < lines.length - 1) {
+        spans.add(TextSpan(text: '\n', style: lineStyle));
+      }
+    }
+
+    return spans;
+  }
+
+  List<TextSpan> _styledInlineSegments(String source, TextStyle defaultStyle) {
+    final match = _firstInlineMarkerMatch(source);
+    if (match == null) {
+      return [TextSpan(text: source, style: defaultStyle)];
+    }
+
+    final spans = <TextSpan>[];
+
+    if (match.openStart > 0) {
+      spans.addAll(
+        _styledInlineSegments(
+          source.substring(0, match.openStart),
+          defaultStyle,
+        ),
+      );
+    }
+
+    spans.add(_hiddenMarkdownMarker(match.openingMarker, defaultStyle));
+    spans.addAll(
+      _styledInlineSegments(
+        source.substring(match.contentStart, match.closeStart),
+        match.applyTo(defaultStyle),
+      ),
+    );
+    spans.add(_hiddenMarkdownMarker(match.closingMarker, defaultStyle));
+
+    final afterClose = match.closeStart + match.closingMarker.length;
+    if (afterClose < source.length) {
+      spans.addAll(
+        _styledInlineSegments(source.substring(afterClose), defaultStyle),
+      );
+    }
+
+    return spans;
+  }
+
+  _InlineMarkerMatch? _firstInlineMarkerMatch(String source) {
+    final matches = <_InlineMarkerMatch>[
+      ?_delimitedMatch(
+        source,
+        openingMarker: '<u>',
+        closingMarker: '</u>',
+        styleBuilder: (style) =>
+            style.copyWith(decoration: TextDecoration.underline),
+      ),
+      ?_delimitedMatch(
+        source,
+        openingMarker: '**',
+        closingMarker: '**',
+        styleBuilder: (style) => style.copyWith(fontWeight: FontWeight.w800),
+      ),
+      ?_delimitedMatch(
+        source,
+        openingMarker: '*',
+        closingMarker: '*',
+        styleBuilder: (style) => style.copyWith(fontStyle: FontStyle.italic),
+        skipDoubleAsterisks: true,
+      ),
+    ]..sort((first, second) => first.openStart.compareTo(second.openStart));
+
+    if (matches.isEmpty) {
+      return null;
+    }
+
+    return matches.first;
+  }
+
+  _InlineMarkerMatch? _delimitedMatch(
+    String source, {
+    required String openingMarker,
+    required String closingMarker,
+    required TextStyle Function(TextStyle style) styleBuilder,
+    bool skipDoubleAsterisks = false,
+  }) {
+    var openStart = 0;
+
+    while (openStart < source.length) {
+      openStart = source.indexOf(openingMarker, openStart);
+      if (openStart == -1) {
+        return null;
+      }
+
+      final contentStart = openStart + openingMarker.length;
+      if (skipDoubleAsterisks &&
+          ((openStart > 0 && source[openStart - 1] == '*') ||
+              (contentStart < source.length && source[contentStart] == '*'))) {
+        openStart = contentStart;
+        continue;
+      }
+
+      final closeStart = source.indexOf(closingMarker, contentStart);
+      if (closeStart == -1) {
+        return null;
+      }
+
+      if (skipDoubleAsterisks &&
+          ((closeStart > 0 && source[closeStart - 1] == '*') ||
+              (closeStart + 1 < source.length &&
+                  source[closeStart + 1] == '*'))) {
+        openStart = closeStart + closingMarker.length;
+        continue;
+      }
+
+      return _InlineMarkerMatch(
+        openingMarker: openingMarker,
+        closingMarker: closingMarker,
+        openStart: openStart,
+        contentStart: contentStart,
+        closeStart: closeStart,
+        styleBuilder: styleBuilder,
+      );
+    }
+
+    return null;
+  }
+
+  TextSpan _hiddenMarkdownMarker(String marker, TextStyle defaultStyle) {
+    return TextSpan(
+      text: marker,
+      style: defaultStyle.copyWith(
+        color: Colors.transparent,
+        fontSize: 0.1,
+        height: 0.01,
+      ),
+    );
+  }
+
+  _HeadingStyle? _headingForLine(String line) {
+    if (line.startsWith('### ')) {
+      return const _HeadingStyle(markerLength: 4, fontSize: 20);
+    }
+
+    if (line.startsWith('## ')) {
+      return const _HeadingStyle(markerLength: 3, fontSize: 24);
+    }
+
+    if (line.startsWith('# ')) {
+      return const _HeadingStyle(markerLength: 2, fontSize: 28);
+    }
+
+    return null;
+  }
+}
+
+class _HeadingStyle {
+  const _HeadingStyle({required this.markerLength, required this.fontSize});
+
+  final int markerLength;
+  final double fontSize;
+}
+
+class _InlineMarkerMatch {
+  const _InlineMarkerMatch({
+    required this.openingMarker,
+    required this.closingMarker,
+    required this.openStart,
+    required this.contentStart,
+    required this.closeStart,
+    required this.styleBuilder,
+  });
+
+  final String openingMarker;
+  final String closingMarker;
+  final int openStart;
+  final int contentStart;
+  final int closeStart;
+  final TextStyle Function(TextStyle style) styleBuilder;
+
+  TextStyle applyTo(TextStyle style) => styleBuilder(style);
 }
 
 class _NotesSidebar extends StatelessWidget {
@@ -220,6 +756,7 @@ class _WorkspaceEditor extends StatelessWidget {
     required this.paper,
     required this.titleController,
     required this.controller,
+    required this.editorFocusNode,
     required this.onTitleChanged,
     required this.onContentChanged,
   });
@@ -227,6 +764,7 @@ class _WorkspaceEditor extends StatelessWidget {
   final PaperStackItem? paper;
   final TextEditingController titleController;
   final TextEditingController controller;
+  final FocusNode editorFocusNode;
   final ValueChanged<String> onTitleChanged;
   final ValueChanged<String> onContentChanged;
 
@@ -270,6 +808,7 @@ class _WorkspaceEditor extends StatelessWidget {
             child: TextField(
               key: ValueKey('editor-${paper!.id}'),
               controller: controller,
+              focusNode: editorFocusNode,
               onChanged: onContentChanged,
               expands: true,
               maxLines: null,
