@@ -5,6 +5,8 @@ import 'dart:ui' show lerpDouble;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+const MethodChannel _hapticsChannel = MethodChannel('shred_note/haptics');
+
 class WorkspaceScreen extends StatefulWidget {
   const WorkspaceScreen({super.key});
 
@@ -310,9 +312,14 @@ class _PaperStackState extends State<PaperStack> {
   static const double _focusChangeThreshold = 0.58;
   static const Duration _snapDebounceDuration = Duration(milliseconds: 140);
   static const Duration _snapAnimationDuration = Duration(milliseconds: 420);
+  static const Duration _scrollHapticMinimumInterval = Duration(
+    milliseconds: 32,
+  );
 
   late final ScrollController _scrollController;
   Timer? _snapDebounceTimer;
+  DateTime? _lastScrollHapticAt;
+  double? _lastScrollHapticOffset;
   bool _isSnapping = false;
   bool _shouldAlignSelectedPaper = true;
 
@@ -388,6 +395,16 @@ class _PaperStackState extends State<PaperStack> {
               if (notification is ScrollStartNotification ||
                   notification is ScrollUpdateNotification) {
                 _snapDebounceTimer?.cancel();
+              }
+
+              if (notification is ScrollStartNotification) {
+                _lastScrollHapticOffset = _scrollController.hasClients
+                    ? _scrollController.offset
+                    : null;
+              }
+
+              if (notification is ScrollUpdateNotification && !_isSnapping) {
+                _playScrollHapticIfNeeded(paperStride);
               }
 
               if (notification is ScrollEndNotification && !_isSnapping) {
@@ -551,6 +568,7 @@ class _PaperStackState extends State<PaperStack> {
     if ((_scrollController.offset - targetOffset).abs() < 0.5) {
       if (selectPaper && selectAfterSnap) {
         widget.onPaperSelected?.call(widget.papers[index]);
+        _playPaperSnapHaptic();
       }
       return;
     }
@@ -565,11 +583,56 @@ class _PaperStackState extends State<PaperStack> {
 
       if (mounted && selectPaper && selectAfterSnap) {
         widget.onPaperSelected?.call(widget.papers[index]);
+        _playPaperSnapHaptic();
       }
     } finally {
       if (mounted) {
         _isSnapping = false;
       }
+    }
+  }
+
+  Future<void> _playPaperSnapHaptic() async {
+    try {
+      await _hapticsChannel.invokeMethod<void>('paperSnap');
+    } on MissingPluginException {
+      // Haptics are only wired on platforms that provide a native channel.
+    } on PlatformException {
+      // Haptics are optional; scrolling should never fail because of them.
+    }
+  }
+
+  void _playScrollHapticIfNeeded(double paperStride) {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+
+    final now = DateTime.now();
+    final currentOffset = _scrollController.offset;
+    final previousOffset = _lastScrollHapticOffset ?? currentOffset;
+    final minimumDistance = max(12.0, paperStride * 0.08);
+    final hasMovedEnough =
+        (currentOffset - previousOffset).abs() >= minimumDistance;
+    final hasWaitedEnough =
+        _lastScrollHapticAt == null ||
+        now.difference(_lastScrollHapticAt!) >= _scrollHapticMinimumInterval;
+
+    if (!hasMovedEnough || !hasWaitedEnough) {
+      return;
+    }
+
+    _lastScrollHapticOffset = currentOffset;
+    _lastScrollHapticAt = now;
+    _playPaperScrollHaptic();
+  }
+
+  Future<void> _playPaperScrollHaptic() async {
+    try {
+      await _hapticsChannel.invokeMethod<void>('paperScroll');
+    } on MissingPluginException {
+      // Haptics are only wired on platforms that provide a native channel.
+    } on PlatformException {
+      // Haptics are optional; scrolling should never fail because of them.
     }
   }
 }
