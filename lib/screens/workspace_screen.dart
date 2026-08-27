@@ -426,7 +426,10 @@ class _PaperStackState extends State<PaperStack> {
                             _PaperStackLayout(
                               paper: widget.papers[index],
                               index: index,
-                              top: verticalInset + index * paperStride,
+                              centerY:
+                                  verticalInset +
+                                  paperHeight / 2 +
+                                  index * paperStride,
                               distanceFromFocus: (index - focusedPosition)
                                   .abs(),
                             ),
@@ -442,7 +445,7 @@ class _PaperStackState extends State<PaperStack> {
                         for (final layout in paperLayouts)
                           _PositionedPaperPreview(
                             paper: layout.paper,
-                            top: layout.top,
+                            centerY: layout.centerY,
                             scrollOffset: scrollOffset,
                             viewportCenter: viewportCenter,
                             paperWidth: paperWidth,
@@ -567,20 +570,20 @@ class _PaperStackLayout {
   const _PaperStackLayout({
     required this.paper,
     required this.index,
-    required this.top,
+    required this.centerY,
     required this.distanceFromFocus,
   });
 
   final PaperStackItem paper;
   final int index;
-  final double top;
+  final double centerY;
   final double distanceFromFocus;
 }
 
 class _PositionedPaperPreview extends StatelessWidget {
   const _PositionedPaperPreview({
     required this.paper,
-    required this.top,
+    required this.centerY,
     required this.scrollOffset,
     required this.viewportCenter,
     required this.paperWidth,
@@ -590,7 +593,7 @@ class _PositionedPaperPreview extends StatelessWidget {
   });
 
   final PaperStackItem paper;
-  final double top;
+  final double centerY;
   final double scrollOffset;
   final double viewportCenter;
   final double paperWidth;
@@ -600,8 +603,8 @@ class _PositionedPaperPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final paperCenter = top - scrollOffset + paperHeight / 2;
-    final distance = ((paperCenter - viewportCenter).abs() / viewportCenter)
+    final visualCenterY = centerY - scrollOffset;
+    final distance = ((visualCenterY - viewportCenter).abs() / viewportCenter)
         .clamp(0.0, 1.0);
     final focus = 1 - distance;
     final paperDistance = distanceFromFocus.clamp(0.0, 2.0);
@@ -611,16 +614,16 @@ class _PositionedPaperPreview extends StatelessWidget {
     final shadowOpacity = lerpDouble(0.12, 0.28, focus)!;
 
     return Positioned(
-      top: top,
+      top: centerY - paperHeight / 2,
       left: 0,
       right: 0,
       child: Align(
-        alignment: Alignment.topCenter,
+        alignment: Alignment.center,
         child: SizedBox(
           width: paperWidth * widthFactor,
           child: Transform.scale(
             scale: scale,
-            alignment: Alignment.topCenter,
+            alignment: Alignment.center,
             child: PaperPreview(
               paper: paper,
               height: paperHeight,

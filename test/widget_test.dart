@@ -151,8 +151,31 @@ void main() {
         .dy;
     final secondTitleTop = tester.getTopLeft(find.text('Paper 2')).dy;
 
-    expect(secondPaperTop - firstPaperBottom, inInclusiveRange(8, 28));
+    expect(secondPaperTop - firstPaperBottom, inInclusiveRange(24, 44));
     expect(secondTitleTop, greaterThan(firstPaperBottom));
+  });
+
+  testWidgets('focused paper has balanced adjacent spacing', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      paperStackFixture(papers: papers(3, selectedIndex: 1)),
+    );
+    await tester.pumpAndSettle();
+
+    final previousRect = tester.getRect(
+      find.widgetWithText(PaperPreview, 'Paper 1'),
+    );
+    final focusedRect = tester.getRect(
+      find.widgetWithText(PaperPreview, 'Paper 2'),
+    );
+    final nextRect = tester.getRect(
+      find.widgetWithText(PaperPreview, 'Paper 3'),
+    );
+    final gapAbove = focusedRect.top - previousRect.bottom;
+    final gapBelow = nextRect.top - focusedRect.bottom;
+
+    expect((gapAbove - gapBelow).abs(), lessThan(8));
   });
 
   testWidgets('selected paper renders larger than unselected neighbours', (
